@@ -20,6 +20,9 @@ import '@xyflow/react/dist/style.css';
 import { useToast } from './ui/ToastNotification';
 import { mockData } from '../services/careerApi';
 import { CareerNode as CareerNodeType } from '../types/career';
+import { createSmartMindmapSimple, convertToXYFlowNodes, convertToXYFlowEdges } from '../services/smartMindmapApi';
+import { autoExpand } from '../services/autoExpandApi';
+import { ragDetail } from '../services/ragDetailApi';
 import './AICareerCanvas.css';
 
 // Theme Context
@@ -288,11 +291,14 @@ const ThemeToggle: React.FC = () => {
 const Sidebar: React.FC<{ 
   isOpen: boolean; 
   onClose: () => void; 
-  onClearCanvas?: () => void; 
-}> = ({ isOpen, onClose, onClearCanvas }) => {
+  onClearCanvas?: () => void;
+  selectedNode?: Node | null;
+}> = ({ isOpen, onClose, onClearCanvas, selectedNode }) => {
   const { theme } = useTheme();
   const toast = useToast();
-  const [activeTab, setActiveTab] = useState<'info' | 'review' | 'tools'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'review' | 'rag' | 'tools'>('info');
+  const [ragData, setRagData] = useState<any>(null);
+  const [isLoadingRag, setIsLoadingRag] = useState(false);
   const [unreadReviews, setUnreadReviews] = useState(3);
   
   // Mock data for career info
@@ -339,11 +345,53 @@ const Sidebar: React.FC<{
     }
   ];
   
+  // Load RAG data when tab is selected and node is available
+  const loadRagData = async (node: Node) => {
+    if (!node) return;
+
+    setIsLoadingRag(true);
+    try {
+      console.log('🚀 RAG Detail API 호출:', {
+        nodeId: node.id,
+        nodeTitle: node.data.label
+      });
+
+      const response = await ragDetail({
+        query: `${node.data.label}: ${node.data.content || node.data.subtitle || ''}`,
+        context: 'mindmap_node_detail',
+        options: {
+          maxResults: 5,
+          includeMetadata: true,
+          searchDepth: 'detailed'
+        }
+      });
+
+      if (response.success && response.data) {
+        setRagData(response.data);
+        console.log('✅ RAG Detail 로드 완료:', response.data);
+      } else {
+        console.warn('⚠️ RAG Detail 응답 없음:', response.error);
+        setRagData(null);
+      }
+    } catch (error) {
+      console.error('❌ RAG Detail 로드 실패:', error);
+      setRagData(null);
+      toast.error('상세 정보를 불러올 수 없습니다');
+    } finally {
+      setIsLoadingRag(false);
+    }
+  };
+
   React.useEffect(() => {
     if (isOpen && activeTab === 'review') {
       setUnreadReviews(0);
     }
-  }, [isOpen, activeTab]);
+    
+    // Load RAG data when RAG tab is selected and selectedNode exists
+    if (isOpen && activeTab === 'rag' && selectedNode) {
+      loadRagData(selectedNode);
+    }
+  }, [isOpen, activeTab, selectedNode]);
 
   return (
     <div className={`sidebar ${isOpen ? 'open' : 'closed'} ${theme}`}>
@@ -361,6 +409,14 @@ const Sidebar: React.FC<{
           >
             리뷰
             {unreadReviews > 0 && <span className="badge">{unreadReviews}</span>}
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'rag' ? 'active' : ''}`}
+            onClick={() => setActiveTab('rag')}
+            disabled={!selectedNode}
+            title={selectedNode ? '선택된 노드의 상세 정보' : '노드를 선택하세요'}
+          >
+            🔍 상세
           </button>
         </div>
         <button className="sidebar-close" onClick={onClose}>✕</button>
@@ -444,6 +500,106 @@ const Sidebar: React.FC<{
                 </div>
               ))}
             </div>
+          </div>
+        )}
+        
+        {/* RAG 상세 정보 탭 */}
+        {activeTab === 'rag' && (
+          <div className="rag-tab">
+            {!selectedNode ? (
+              <div className="no-selection">
+                <p>노드를 선택하면 관련 상세 정보를 확인할 수 있습니다.</p>
+              </div>
+            ) : (
+              <>
+                <div className="selected-node-info">
+                  <h3>📍 선택된 노드</h3>
+                  <div className="node-summary">
+                    <strong>{selectedNode.data.label}</strong>
+                    {selectedNode.data.content && <p>{selectedNode.data.content}</p>}
+                    {selectedNode.data.subtitle && <p className="subtitle">{selectedNode.data.subtitle}</p>}
+                  </div>
+                </div>
+
+                {isLoadingRag ? (
+                  <div className="loading-rag">
+                    <p>🔍 상세 정보를 검색 중...</p>
+                    <div className="loading-spinner"></div>
+                  </div>
+                ) : ragData ? (
+                  <div className="rag-results">
+                    <h4>📚 관련 정보</h4>
+                    
+                    {ragData.summary && (
+                      <div className="rag-section">
+                        <h5>요약</h5>
+                        <p className="summary-text">{ragData.summary}</p>
+                      </div>
+                    )}
+
+                    {ragData.relatedContent && ragData.relatedContent.length > 0 && (
+                      <div className="rag-section">
+                        <h5>관련 콘텐츠</h5>
+                        <div className="related-content">
+                          {ragData.relatedContent.slice(0, 3).map((content: any, index: number) => (
+                            <div key={index} className="content-item">
+                              <h6>{content.title || `관련 정보 ${index + 1}`}</h6>
+                              <p className="content-text">{content.content || content.description}</p>
+                              {content.source && <span className="content-source">출처: {content.source}</span>}
+                              {content.confidence && (
+                                <span className="confidence-score">신뢰도: {Math.round(content.confidence * 100)}%</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {ragData.suggestions && ragData.suggestions.length > 0 && (
+                      <div className="rag-section">
+                        <h5>💡 제안사항</h5>
+                        <ul className="suggestions-list">
+                          {ragData.suggestions.slice(0, 5).map((suggestion: string, index: number) => (
+                            <li key={index}>{suggestion}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {ragData.keywords && ragData.keywords.length > 0 && (
+                      <div className="rag-section">
+                        <h5>🏷️ 관련 키워드</h5>
+                        <div className="keywords-list">
+                          {ragData.keywords.map((keyword: string, index: number) => (
+                            <span key={index} className="keyword-tag">{keyword}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="rag-actions">
+                      <button 
+                        className="refresh-btn"
+                        onClick={() => loadRagData(selectedNode)}
+                        disabled={isLoadingRag}
+                      >
+                        🔄 새로고침
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="no-rag-data">
+                    <p>관련 정보를 찾을 수 없습니다.</p>
+                    <button 
+                      className="retry-btn"
+                      onClick={() => loadRagData(selectedNode)}
+                    >
+                      다시 시도
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 
@@ -608,6 +764,7 @@ const AICareerCanvasInner: React.FC = () => {
     y: number;
     nodeId: string;
   }>({ visible: false, x: 0, y: 0, nodeId: '' });
+  const [selectedNodeForSidebar, setSelectedNodeForSidebar] = useState<Node | null>(null);
   
   // 연결 모드 상태
   const [isConnectMode, setIsConnectMode] = useState(false);
@@ -1151,7 +1308,7 @@ const AICareerCanvasInner: React.FC = () => {
       return;
     }
     
-    // 일반 모드일 때는 컨텍스트 메뉴 표시
+    // 일반 모드일 때는 컨텍스트 메뉴 표시 및 노드 선택
     const rect = (event.target as HTMLElement).getBoundingClientRect();
     setContextMenu({
       visible: true,
@@ -1159,6 +1316,9 @@ const AICareerCanvasInner: React.FC = () => {
       y: rect.top,
       nodeId: node.id,
     });
+    
+    // 사이드바를 위한 노드 선택
+    setSelectedNodeForSidebar(node);
   }, [isConnectMode, sourceNodeId, setNodes, setEdges, toast]);
 
   const handleContextAction = (action: string, nodeId: string) => {
@@ -1178,8 +1338,7 @@ const AICareerCanvasInner: React.FC = () => {
         toast.info('노드가 삭제되었습니다');
         break;
       case 'ai-expand':
-        toast.info('AI 확장 기능을 준비 중입니다...', { duration: 2000 });
-        // TODO: AI 확장 로직 구현
+        handleAiExpand(nodeId);
         break;
       case 'connect':
         setIsConnectMode(true);
@@ -1243,6 +1402,110 @@ const AICareerCanvasInner: React.FC = () => {
     toast.success('독립 노드가 생성되었습니다. 연결하려면 🔗 연결하기 버튼을 사용하세요.');
   };
   
+  // AI 노드 확장 기능
+  const handleAiExpand = async (nodeId: string) => {
+    const targetNode = nodes.find(n => n.id === nodeId);
+    if (!targetNode) {
+      toast.error('확장할 노드를 찾을 수 없습니다');
+      return;
+    }
+
+    toast.info(`"${targetNode.data.label}" 노드를 AI로 확장 중...`, { duration: 3000 });
+
+    try {
+      console.log('🚀 AI Expand API 호출:', {
+        nodeId,
+        nodeTitle: targetNode.data.label,
+        nodeContent: targetNode.data.content || targetNode.data.subtitle
+      });
+
+      // Call auto-expand API
+      const response = await autoExpand({
+        context: `${targetNode.data.label}: ${targetNode.data.content || targetNode.data.subtitle || ''}`,
+        parentNodeId: nodeId,
+        expandDirection: 'children', // 자식 노드 확장
+        maxNodes: 5 // 최대 5개 노드
+      });
+
+      if (!response.success || !response.data) {
+        throw new Error(response.error?.message || 'Failed to expand node');
+      }
+
+      console.log('✅ AI Expand API 응답:', response.data);
+
+      // Generate new child nodes around the parent
+      const parentPosition = targetNode.position;
+      const childDistance = 180;
+      const angleStep = (2 * Math.PI) / Math.min(response.data.expandedNodes.length, 6);
+      
+      const newNodes: Node[] = [];
+      const newEdges: Edge[] = [];
+
+      response.data.expandedNodes.forEach((expandedNode: any, index: number) => {
+        const angle = index * angleStep;
+        const childNodeId = `expanded-${Date.now()}-${index}`;
+        
+        // Calculate child position
+        const childPosition = {
+          x: parentPosition.x + Math.cos(angle) * childDistance,
+          y: parentPosition.y + Math.sin(angle) * childDistance
+        };
+
+        // Create child node
+        const childNode: Node = {
+          id: childNodeId,
+          type: 'detailNode',
+          position: childPosition,
+          data: {
+            label: expandedNode.title || `확장 노드 ${index + 1}`,
+            content: expandedNode.content || expandedNode.description || '',
+            subtitle: '확장된 단계',
+            metadata: {
+              source: 'ai-expand',
+              parentNodeId: nodeId,
+              confidence: expandedNode.confidence || 0.8
+            }
+          },
+        };
+
+        newNodes.push(childNode);
+
+        // Create edge from parent to child
+        const edge = createConsistentEdge(
+          nodeId,
+          childNodeId,
+          'context_add'
+        );
+
+        if (edge) {
+          newEdges.push(edge);
+        }
+      });
+
+      // Add nodes and edges to the graph
+      setNodes(prevNodes => [...prevNodes, ...newNodes]);
+      setEdges(prevEdges => [...prevEdges, ...newEdges]);
+
+      console.log('🎯 AI 확장 완료:', {
+        parentNode: targetNode.data.label,
+        newNodes: newNodes.length,
+        newEdges: newEdges.length
+      });
+
+      toast.success(`"${targetNode.data.label}" 노드가 ${newNodes.length}개의 하위 노드로 확장되었습니다!`, {
+        duration: 4000,
+        action: {
+          label: '자동 정렬',
+          onClick: () => autoLayout()
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ AI 확장 실패:', error);
+      toast.error(`노드 확장에 실패했습니다: ${error.message}`, { duration: 4000 });
+    }
+  };
+
   // 자동 레이아웃 기능
   const autoLayout = () => {
     const layoutedNodes = nodes.map((node, index) => {
@@ -1371,43 +1634,71 @@ const AICareerCanvasInner: React.FC = () => {
     toast.info('AI가 마인드맵을 생성 중입니다...', { duration: 3000 });
 
     try {
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      console.log('🚀 Smart Mindmap API 호출:', aiInput);
       
-      // Generate mock career map
-      const mockCareerMap = mockData.generateMockCareerMap(aiInput);
+      // Call our smart mindmap API
+      const response = await createSmartMindmapSimple(aiInput, true);
       
-      // Convert to React Flow format - 이제 엣지도 함께 생성됨
-      const { nodes: flowNodes, edges: flowEdges } = convertCareerMapToFlow(
-        mockCareerMap, 
-        calculateOptimalConnection, 
-        getConnectionStyle
-      );
+      if (!response.success || !response.data) {
+        throw new Error(response.error?.message || 'Failed to generate mindmap');
+      }
+
+      console.log('✅ Smart Mindmap API 응답:', {
+        nodes: response.data.nodes.length,
+        connections: response.data.connections.length,
+        processingTime: response.data.metadata.processingTime
+      });
       
-      // 노드와 엣지를 동시에 설정
+      // Convert backend nodes to XYFlow format
+      const flowNodes = convertToXYFlowNodes(response.data.nodes);
+      const flowEdges = convertToXYFlowEdges(response.data.connections);
+      
+      // Set nodes and edges
       setNodes(flowNodes);
       setEdges(flowEdges);
       
-      console.log('🎯 AI 마인드맵 생성 완료:', {
+      console.log('🎯 XYFlow 노드/엣지 설정 완료:', {
         nodes: flowNodes.length,
-        edges: flowEdges.length
+        edges: flowEdges.length,
+        sources: response.data.metadata.sources.join(', ')
       });
 
-      toast.success(`${aiInput} 마인드맵이 생성되었습니다!`, {
+      toast.success(`${aiInput} 마인드맵이 생성되었습니다! (${response.data.metadata.processingTime}ms)`, {
         duration: 3000,
         action: {
           label: '저장',
           onClick: () => {
-            localStorage.setItem('ai-mindmap', JSON.stringify(mockCareerMap));
+            localStorage.setItem('smart-mindmap', JSON.stringify(response.data));
             toast.info('마인드맵이 저장되었습니다');
           }
         }
       });
 
+      // Clear input after successful generation
       setAiInput('');
+      setIsInputExpanded(false);
+      
     } catch (error) {
-      toast.error('마인드맵 생성에 실패했습니다', { duration: 3000 });
-      console.error('Mindmap generation failed:', error);
+      console.error('❌ Smart Mindmap 생성 실패:', error);
+      toast.error(`마인드맵 생성에 실패했습니다: ${error.message}`, { duration: 4000 });
+      
+      // Fallback to mock data for development
+      if (import.meta.env.DEV) {
+        toast.info('개발 모드: Mock 데이터로 폴백합니다...', { duration: 2000 });
+        
+        const mockCareerMap = mockData.generateMockCareerMap(aiInput);
+        const { nodes: flowNodes, edges: flowEdges } = convertCareerMapToFlow(
+          mockCareerMap, 
+          calculateOptimalConnection, 
+          getConnectionStyle
+        );
+        
+        setNodes(flowNodes);
+        setEdges(flowEdges);
+        setAiInput('');
+        setIsInputExpanded(false);
+      }
+      
     } finally {
       setIsGenerating(false);
     }
@@ -1621,6 +1912,7 @@ const AICareerCanvasInner: React.FC = () => {
         isOpen={isSidebarOpen} 
         onClose={() => setIsSidebarOpen(false)} 
         onClearCanvas={clearCanvas}
+        selectedNode={selectedNodeForSidebar}
       />
 
       {/* Context Menu */}

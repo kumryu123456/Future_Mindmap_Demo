@@ -5,7 +5,17 @@
       "Bash(mkdir:*)",
       "Bash(xcopy:*)",
       "Bash(robocopy:*)",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(check-backend.bat)",
+      "Bash(cmd.exe:*)",
+      "Bash(npm install:*)",
+      "Bash(supabase status:*)",
+      "Bash(supabase functions serve:*)",
+      "Bash(npm run dev:*)",
+      "Bash(supabase secrets:*)",
+      "Bash(supabase login:*)",
+      "Bash(supabase stop:*)",
+      "Bash(timeout:*)"
     ],
     "deny": []
   }
