@@ -2007,3 +2007,21 @@
 .expand-btn.analytical {
   background: #8b5cf6;
 }
+
+/* Minor Node Styles */
+.minor-node.light {
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+  border: 2px solid #cbd5e1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  min-width: 100px;
+  min-height: 50px;
+}
+
+.minor-node.dark {
+  background: linear-gradient(135deg, #334155 0%, #475569 100%);
+  border: 2px solid #64748b;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  color: #e2e8f0;
+}

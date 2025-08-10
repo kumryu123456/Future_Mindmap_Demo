@@ -23,7 +23,7 @@ import { CareerNode as CareerNodeType } from '../types/career';
 import { createSmartMindmapSimple, convertToXYFlowNodes, convertToXYFlowEdges } from '../services/smartMindmapApi';
 import { autoExpand } from '../services/autoExpandApi';
 import { ragDetail } from '../services/ragDetailApi';
-import { quickExpandNode } from '../services/nodeExpandApi';
+import { quickExpandNode, expandMemoryNode } from '../services/nodeExpandApi';
 import './AICareerCanvas.css';
 
 // Theme Context
@@ -148,7 +148,23 @@ const MajorNode = ({ data, id }: { data: any; id: string }) => {
     toast.show('노드 확장 중...', 'info');
     
     try {
-      const result = await quickExpandNode(id, style);
+      // Try database node expansion first, fallback to memory expansion
+      let result = await quickExpandNode(id, style);
+
+      // If database expansion fails (node not found), use memory expansion
+      if (!result.success && result.error?.code === '404') {
+        console.log('Database node not found, trying memory expansion for button click...');
+        
+        // Get current node data from React Flow
+        const currentNode = document.querySelector(`[data-id="${id}"]`);
+        const nodeData = {
+          id: id,
+          data: data,
+          position: { x: 0, y: 0 } // Will be calculated by expandMemoryNode
+        };
+        
+        result = await expandMemoryNode(nodeData, style);
+      }
       
       if (result.success && result.nodes && result.edges) {
         // 상위 컴포넌트에서 노드/엣지를 추가할 수 있도록 이벤트 발생
@@ -190,15 +206,9 @@ const MajorNode = ({ data, id }: { data: any; id: string }) => {
         <div className="node-title">{data.label}</div>
         <div className="node-level">{data.subtitle || '주요 영역'}</div>
         
-        {/* AI 확장 버튼들 */}
+        {/* AI 확장 버튼들 - 비활성화됨 */}
         <div className="expand-buttons" style={{ 
-          position: 'absolute', 
-          top: '-30px', 
-          right: '-10px', 
-          display: 'flex', 
-          gap: '4px',
-          opacity: 0,
-          transition: 'opacity 0.2s ease'
+          display: 'none' // 완전히 숨김
         }}>
           <button 
             className="expand-btn comprehensive"
@@ -385,10 +395,34 @@ const ExpandedNode = ({ data, id }: { data: any; id: string }) => {
   );
 };
 
+// MinorNode Component (for smaller detail nodes)
+const MinorNode = ({ data, id }: { data: any; id: string }) => {
+  const { theme } = useTheme();
+  
+  return (
+    <div className={`career-node minor-node ${theme}`}>
+      <DragHandle type="source" position={Position.Top} id="source-top" />
+      <DragHandle type="source" position={Position.Right} id="source-right" />
+      <DragHandle type="source" position={Position.Bottom} id="source-bottom" />
+      <DragHandle type="source" position={Position.Left} id="source-left" />
+      <DragHandle type="target" position={Position.Top} id="target-top" />
+      <DragHandle type="target" position={Position.Right} id="target-right" />
+      <DragHandle type="target" position={Position.Bottom} id="target-bottom" />
+      <DragHandle type="target" position={Position.Left} id="target-left" />
+      
+      <div className="node-content">
+        <div className="node-title">{data.label}</div>
+        <div className="node-level">{data.subtitle || '세부 항목'}</div>
+      </div>
+    </div>
+  );
+};
+
 // Node Types Registry
 const nodeTypes: NodeTypes = {
   centerNode: CenterNode,
   majorNode: MajorNode,
+  minorNode: MinorNode,
   detailNode: DetailNode,
   goalNode: GoalNode,
   expandedNode: ExpandedNode,
@@ -1617,14 +1651,27 @@ const AICareerCanvasInner: React.FC = () => {
     toast.info(`"${targetNode.data.label}" 노드를 AI로 확장 중...`, { duration: 3000 });
 
     try {
-      console.log('🚀 AI Expand API 호출:', {
+      console.log('🚀 AI Expand 시작:', {
         nodeId,
         nodeTitle: targetNode.data.label,
         nodeContent: targetNode.data.content || targetNode.data.subtitle
       });
 
-      // Use the new quickExpandNode API
-      const result = await quickExpandNode(nodeId, 'comprehensive');
+      // Try database node expansion first, fallback to memory expansion
+      let result = await quickExpandNode(nodeId, 'comprehensive');
+
+      // If database expansion fails (node not found), use memory expansion
+      if (!result.success && result.error?.code === '404') {
+        console.log('Database node not found, trying memory expansion...');
+        result = await expandMemoryNode(
+          {
+            id: nodeId,
+            data: targetNode.data,
+            position: targetNode.position
+          },
+          'comprehensive'
+        );
+      }
 
       if (!result.success || !result.nodes || !result.edges) {
         throw new Error(result.error?.message || 'Failed to expand node');

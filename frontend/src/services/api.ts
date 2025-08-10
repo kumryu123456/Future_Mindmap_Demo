@@ -8,7 +8,7 @@ import { globalErrorHandler } from '../utils/errorHandler';
 // Default API configuration for Supabase Edge Functions
 const DEFAULT_CONFIG: Required<ApiConfig> = {
   baseUrl: import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:54321',
-  timeout: parseInt(import.meta.env.VITE_API_TIMEOUT || '10000'),
+  timeout: parseInt(import.meta.env.VITE_API_TIMEOUT || '30000'),
   headers: {
     'Content-Type': 'application/json; charset=utf-8',
     'Accept': 'application/json; charset=utf-8',
