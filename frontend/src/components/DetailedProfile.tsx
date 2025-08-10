@@ -1,10 +1,10 @@
 import React, { useState } from "react";
-import { BrowseProfile } from "../types/career";
-import { DetailedCareerProfile } from "../types/detailedProfile";
+import type { DetailedCareerProfile } from "../types/detailedProfile";
 import { useTheme } from "@/components/theme-provider";
 import MessageModal from "./ui/MessageModal";
 import InteractiveCareerFlow from "./InteractiveCareerFlow";
 import "./DetailedProfile.css";
+import type { BrowseProfile } from "@/services/mockCareerApi";
 
 interface DetailedProfileProps {
   profile: BrowseProfile;
@@ -275,7 +275,6 @@ const generateDetailedProfile = (
 const DetailedProfile: React.FC<DetailedProfileProps> = ({
   profile,
   onBack,
-  onMessage,
 }) => {
   const { theme } = useTheme();
   const [detailedProfile] = useState(() => generateDetailedProfile(profile));

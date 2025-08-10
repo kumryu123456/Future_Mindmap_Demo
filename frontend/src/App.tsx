@@ -4,10 +4,10 @@ import Header from "./components/Header";
 import { mockPlans, mockSessionData } from "./data/mockPlans";
 import { useToast } from "./components/ui/ToastNotification";
 import PlanCard from "./components/ui/PlanCard";
-import AICareerCanvas from "./components/AICareerCanvas";
 import Browse from "./components/Browse";
 import { ThemeProvider } from "@/components/theme-provider";
 import { BrowserRouter, Route, Routes } from "react-router";
+import { Carrer } from "@/pages/Carrer/Career";
 
 // 메인 App 컴포넌트 (ThemeProvider 래핑)
 function App() {
@@ -76,23 +76,7 @@ function App() {
             }}
           >
             <Routes>
-              <Route
-                index
-                element={
-                  <div
-                    style={{
-                      width: "100%",
-                      height: "calc(100vh - 80px)" /* Header 높이만 제외 */,
-                      position: "relative",
-                      overflow: "hidden",
-                      margin: 0,
-                      padding: 0,
-                    }}
-                  >
-                    <AICareerCanvas />
-                  </div>
-                }
-              />
+              <Route index element={<Carrer />} />
 
               <Route
                 path="dashboard"

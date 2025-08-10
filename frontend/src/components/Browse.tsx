@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import type { CareerMap } from "../types/career";
 import { careerAPI, type BrowseProfile } from "../services/mockCareerApi";
 import { useProfileSearch } from "../hooks/useProfileSearch";
-import { useKeyboardNavigation } from "../hooks/useKeyboardNavigation";
 import { useTheme } from "@/components/theme-provider";
 import DetailedProfile from "./DetailedProfile";
 import AdvancedSearch from "./AdvancedSearch";
@@ -12,6 +11,28 @@ import Pagination from "./Pagination";
 import { useInfiniteScroll } from "../hooks/useInfiniteScroll";
 // import CareerMapViewer from './CareerMapViewer';  // 임시 주석처리
 import "./Browse.css";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  BubblesIcon,
+  CheckIcon,
+  CommandIcon,
+  HeartIcon,
+  LinkIcon,
+  MessageCircle,
+  PlusIcon,
+  SearchIcon,
+} from "lucide-react";
+import {
+  Card,
+  CardDescription,
+  CardContent,
+  CardAction,
+  CardHeader,
+  CardFooter,
+  CardTitle,
+} from "./ui/card";
+import { Avatar, AvatarFallback, AvatarImage } from "@radix-ui/react-avatar";
 
 interface BrowseProps {
   onProfileSelect?: (profile: BrowseProfile) => void;
@@ -54,13 +75,8 @@ const Browse: React.FC<BrowseProps> = ({ onProfileSelect }) => {
   const [showNavigation, setShowNavigation] = useState(false);
 
   // 실시간 검색 훅 사용
-  const {
-    searchQuery,
-    setSearchQuery,
-    debouncedQuery,
-    searchStats,
-    isSearching,
-  } = useProfileSearch({ profiles });
+  const { searchQuery, setSearchQuery, debouncedQuery, searchStats } =
+    useProfileSearch({ profiles });
 
   // 🎯 Phase 2: 소셜 인터랙션 상태 관리
   const [likedProfiles, setLikedProfiles] = useState<Set<string>>(new Set());
@@ -551,21 +567,15 @@ const Browse: React.FC<BrowseProps> = ({ onProfileSelect }) => {
       <div className="browse-controls">
         <div className="search-section">
           <div className="search-input-wrapper">
-            <input
+            <Input
               type="text"
-              className="search-input"
               placeholder="이름, 직무, 스킬, 회사명으로 검색..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
-            {isSearching && <div className="search-loading">⏳</div>}
-            <button
-              className="search-button"
-              onClick={() => setShowAdvancedSearch(true)}
-              title="고급 검색"
-            >
-              🔍+
-            </button>
+            <Button size="icon" onClick={() => setShowAdvancedSearch(true)}>
+              <SearchIcon />
+            </Button>
           </div>
 
           {/* 검색 결과 통계 */}
@@ -626,120 +636,177 @@ const Browse: React.FC<BrowseProps> = ({ onProfileSelect }) => {
         <>
           <div className={`profiles-container ${viewMode}`}>
             {finalFilteredProfiles.map((profile, index) => (
-              <div
+              <Card
                 key={profile.id}
-                className="profile-card"
                 onClick={() => handleProfileClick(profile)}
               >
-                <div className="card-header">
-                  <div className="profile-avatar">
-                    {profile.userProfile.avatar || "👤"}
-                  </div>
-                  <div className="profile-info">
-                    <h3>{profile.userProfile.displayName}</h3>
-                    <p className="role">{profile.userProfile.currentRole}</p>
-                    <div className="work-info">
-                      <span className="company">
-                        🏢 {profile.userProfile.company || "구직중"}
-                      </span>
-                      <span className="location">
-                        📍 {profile.userProfile.location || "서울"}
-                      </span>
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    {/* Profile Section */}
+                    <div className="flex items-start space-x-4">
+                      <div className="flex-1 min-w-0">
+                        <CardTitle className="text-xl font-bold text-gray-900 mb-1 group-hover:text-blue-600 transition-colors">
+                          {profile.userProfile.displayName}
+                        </CardTitle>
+                        <CardDescription className="text-sm text-gray-600 mb-2">
+                          {profile.userProfile.currentRole}
+                        </CardDescription>
+
+                        {/* Company & Location */}
+                        <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+                          <span className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded-full">
+                            <span>🏢</span>
+                            {profile.userProfile.company || "구직중"}
+                          </span>
+                          <span className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded-full">
+                            <span>📍</span>
+                            {profile.userProfile.location || "서울"}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <p className="experience">
-                      {profile.userProfile.experience} 경험
-                    </p>
+
+                    {/* Follow Button */}
+                    <Button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSocialInteraction("follow", profile.id, index);
+                      }}
+                    >
+                      <span className="flex items-center gap-2">
+                        {profile.isFollowed ? (
+                          <>
+                            <CheckIcon />
+                            팔로잉
+                          </>
+                        ) : (
+                          <>
+                            <PlusIcon />
+                            팔로우
+                          </>
+                        )}
+                      </span>
+                    </Button>
                   </div>
-                  <button
-                    className={`follow-btn ${
-                      profile.isFollowed ? "following" : ""
-                    } ${animatingFollows.has(profile.id) ? "animating" : ""}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSocialInteraction("follow", profile.id, index);
-                    }}
-                  >
-                    {profile.isFollowed ? "✓" : "+"}
-                  </button>
-                </div>
+                </CardHeader>
 
-                <p className="bio">{profile.userProfile.bio}</p>
+                <CardContent className="relative pt-2 pb-4">
+                  {/* Bio */}
+                  <p className="text-gray-700 text-sm mb-4 line-clamp-2 leading-relaxed">
+                    {profile.userProfile.bio}
+                  </p>
 
-                <div className="skills-preview">
-                  {profile.userProfile.skills.slice(0, 4).map((skill) => (
-                    <span key={skill} className="skill-tag">
-                      {skill}
-                    </span>
-                  ))}
-                  {profile.userProfile.skills.length > 4 && (
-                    <span className="more-skills">
-                      +{profile.userProfile.skills.length - 4}
-                    </span>
+                  {/* Skills */}
+                  <div className="mb-4">
+                    <h4 className="text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">
+                      주요 스킬
+                    </h4>
+                    <div className="flex flex-wrap gap-2">
+                      {profile.userProfile.skills.slice(0, 4).map((skill) => (
+                        <span
+                          key={skill}
+                          className="inline-flex items-center px-3 py-1 bg-gradient-to-r from-blue-100 to-purple-100 text-blue-800 text-xs font-medium rounded-full border border-blue-200 hover:shadow-sm transition-shadow"
+                        >
+                          {skill}
+                        </span>
+                      ))}
+                      {profile.userProfile.skills.length > 4 && (
+                        <span className="inline-flex items-center px-3 py-1 bg-gray-200 text-gray-600 text-xs font-medium rounded-full">
+                          +{profile.userProfile.skills.length - 4}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Badges */}
+                  {profile.badges.length > 0 && (
+                    <div className="mb-4">
+                      <h4 className="text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">
+                        획득 배지
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {profile.badges.slice(0, 2).map((badge) => (
+                          <span
+                            key={badge}
+                            className="inline-flex items-center px-3 py-1 bg-gradient-to-r from-amber-100 to-orange-100 text-amber-800 text-xs font-medium rounded-full border border-amber-200"
+                          >
+                            🏆 {badge}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
                   )}
-                </div>
 
-                <div className="badges-preview">
-                  {profile.badges.slice(0, 2).map((badge) => (
-                    <span key={badge} className="badge">
-                      {badge}
-                    </span>
-                  ))}
-                </div>
+                  {/* Stats */}
+                  <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50/50 rounded-xl border border-gray-100">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-red-500 mb-1">
+                        {profile.stats.totalLikes}
+                      </div>
+                      <div className="text-xs text-gray-600 font-medium">
+                        좋아요
+                      </div>
+                    </div>
+                    <div className="text-center border-x border-gray-200">
+                      <div className="text-2xl font-bold text-blue-500 mb-1">
+                        {profile.stats.followers}
+                      </div>
+                      <div className="text-xs text-gray-600 font-medium">
+                        팔로워
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-green-500 mb-1">
+                        {profile.stats.completedGoals}
+                      </div>
+                      <div className="text-xs text-gray-600 font-medium">
+                        완료 목표
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
 
-                <div className="card-stats">
-                  <div className="stat">
-                    <span className="stat-icon">❤️</span>
-                    <span>{profile.stats.totalLikes}</span>
-                  </div>
-                  <div className="stat">
-                    <span className="stat-icon">👥</span>
-                    <span>{profile.stats.followers}</span>
-                  </div>
-                  <div className="stat">
-                    <span className="stat-icon">🎯</span>
-                    <span>{profile.stats.completedGoals}</span>
-                  </div>
-                </div>
-
-                <div className="card-actions">
-                  <button
-                    className={`action-btn like ${
-                      likedProfiles.has(profile.id) ? "liked" : ""
-                    } ${animatingLikes.has(profile.id) ? "animating" : ""}`}
+                <CardFooter>
+                  {/* Like Button */}
+                  <Button
                     onClick={(e) => {
                       e.stopPropagation();
                       handleSocialInteraction("like", profile.id, index);
                     }}
                   >
-                    {likedProfiles.has(profile.id)
-                      ? "❤️ 좋아요됨"
-                      : "🤍 좋아요"}
-                  </button>
-                  <button
-                    className="action-btn comment"
+                    <HeartIcon />
+                    {likedProfiles.has(profile.id) ? "좋아요됨" : "좋아요"}
+                  </Button>
+
+                  {/* Comment Button */}
+                  <Button
                     onClick={(e) => {
                       e.stopPropagation();
                       handleSocialInteraction("comment", profile.id, index);
                     }}
                   >
-                    💬 댓글
-                  </button>
-                  <button
-                    className="action-btn share"
+                    <MessageCircle />
+                    댓글
+                  </Button>
+
+                  {/* Share Button */}
+                  <Button
                     onClick={(e) => {
                       e.stopPropagation();
                       navigator.clipboard.writeText(
                         `${window.location.origin}/profile/${profile.id}`,
                       );
-                      // Toast 알림 제거됨
-                      // toast.success('프로필 링크가 복사되었습니다! 🔗');
                       console.log("프로필 링크 복사됨");
                     }}
                   >
-                    🔗 공유
-                  </button>
-                </div>
-              </div>
+                    <LinkIcon />
+                    공유
+                  </Button>
+                </CardFooter>
+
+                {/* Hover Effect Overlay */}
+                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-transparent to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+              </Card>
             ))}
           </div>
 
