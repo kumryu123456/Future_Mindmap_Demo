@@ -1,34 +1,35 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from "react";
 import type {
   SaveSessionRequest,
-  LoadSessionRequest,
   SessionData,
-  SessionMetadata
-} from '../../types/api';
-import { 
-  saveSession,
-  saveMindmapSession,
-  saveProjectSession,
-  autoSaveSession,
-  saveCollaborativeSession
-} from '../../services/saveSessionApi';
+  SessionMetadata,
+} from "../../types/api";
+import { saveSession, autoSaveSession } from "../../services/saveSessionApi";
 import {
-  loadSession,
-  loadSessionBasic,
   loadSessionFull,
   getUserSessions,
   getRecentSessions,
-  searchSessions
-} from '../../services/loadSessionApi';
-import { useSession, useSessionUI, useNotificationSystem } from '../../hooks/useSessionStore';
-import { useToast } from '../ui/ToastNotification';
-import { ProgressIndicator } from '../ui/ProgressIndicator';
+  searchSessions,
+} from "../../services/loadSessionApi";
+import {
+  useSession,
+  useSessionUI,
+  useNotificationSystem,
+} from "../../hooks/useSessionStore";
+import { useToast } from "../ui/ToastNotification";
+import { ProgressIndicator } from "../ui/ProgressIndicator";
 
 interface SessionItem {
   id: string;
   name: string;
-  type: 'mindmap' | 'project' | 'research' | 'planning' | 'brainstorming' | 'analysis';
-  status: 'active' | 'paused' | 'completed' | 'archived';
+  type:
+    | "mindmap"
+    | "project"
+    | "research"
+    | "planning"
+    | "brainstorming"
+    | "analysis";
+  status: "active" | "paused" | "completed" | "archived";
   lastModified: string;
   size: number;
   isLocal: boolean;
@@ -43,7 +44,7 @@ interface SessionManagerProps {
   /** Current session ID if editing existing */
   currentSessionId?: string;
   /** Session type for new sessions */
-  defaultSessionType?: SessionItem['type'];
+  defaultSessionType?: SessionItem["type"];
   /** Enable auto-save functionality */
   autoSave?: boolean;
   /** Auto-save interval in milliseconds */
@@ -65,30 +66,32 @@ interface SessionManagerProps {
 export const SessionManager: React.FC<SessionManagerProps> = ({
   currentSessionData,
   currentSessionId,
-  defaultSessionType = 'mindmap',
+  defaultSessionType = "mindmap",
   autoSave = true,
   autoSaveInterval = 30000,
-  enableCollaboration = true,
   onSave,
   onLoad,
   onSessionChange,
-  onError
+  onError,
 }) => {
   // State management
   const [sessions, setSessions] = useState<SessionItem[]>([]);
-  const [selectedSession, setSelectedSession] = useState<SessionItem | null>(null);
+  const [selectedSession, setSelectedSession] = useState<SessionItem | null>(
+    null,
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [saveProgress, setSaveProgress] = useState<number>(0);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sessionFilter, setSessionFilter] = useState<'all' | 'recent' | 'shared' | 'local'>('all');
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sessionFilter, setSessionFilter] = useState<
+    "all" | "recent" | "shared" | "local"
+  >("all");
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [showLoadDialog, setShowLoadDialog] = useState(false);
-  const [newSessionName, setNewSessionName] = useState('');
-  const [newSessionDescription, setNewSessionDescription] = useState('');
+  const [newSessionName, setNewSessionName] = useState("");
+  const [newSessionDescription, setNewSessionDescription] = useState("");
 
   // Hooks
   const { auth, connectivity } = useSession();
-  const { showToast, setLoading } = useSessionUI();
   const { showSuccess, showError } = useNotificationSystem();
   const toast = useToast();
 
@@ -115,44 +118,48 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
     setIsLoading(true);
     try {
       let response;
-      
+
       switch (sessionFilter) {
-        case 'recent':
+        case "recent":
           response = await getRecentSessions(auth.user.id, 30, 20);
           break;
-        case 'shared':
+        case "shared":
           response = await getSharedSessions(auth.user.id, 20);
           break;
         default:
           response = await getUserSessions(auth.user.id, {
             limit: 50,
-            sortBy: 'updatedAt',
-            sortOrder: 'desc'
+            sortBy: "updatedAt",
+            sortOrder: "desc",
           });
       }
 
       if (response.success && response.data?.sessions) {
-        const sessionItems: SessionItem[] = response.data.sessions.map(session => ({
-          id: session.id,
-          name: session.name,
-          type: session.type as SessionItem['type'],
-          status: session.status as SessionItem['status'],
-          lastModified: session.updatedAt,
-          size: session.dataSize || 0,
-          isLocal: false,
-          isCollaborative: session.collaborators && session.collaborators.length > 0,
-          collaboratorCount: session.collaborators?.length,
-          preview: session.description
-        }));
+        const sessionItems: SessionItem[] = response.data.sessions.map(
+          (session) => ({
+            id: session.id,
+            name: session.name,
+            type: session.type as SessionItem["type"],
+            status: session.status as SessionItem["status"],
+            lastModified: session.updatedAt,
+            size: session.dataSize || 0,
+            isLocal: false,
+            isCollaborative:
+              session.collaborators && session.collaborators.length > 0,
+            collaboratorCount: session.collaborators?.length,
+            preview: session.description,
+          }),
+        );
 
         setSessions(sessionItems);
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to load sessions';
-      showError('Load Error', errorMessage);
-      toast.warning('Failed to load sessions list. Using cached data.', {
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to load sessions";
+      showError("Load Error", errorMessage);
+      toast.warning("Failed to load sessions list. Using cached data.", {
         duration: 4000,
-        actions: [{ label: 'Retry', onClick: () => loadUserSessions() }]
+        actions: [{ label: "Retry", onClick: () => loadUserSessions() }],
       });
       onError?.(errorMessage);
     } finally {
@@ -176,46 +183,48 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
           name: newSessionName.trim(),
           description: newSessionDescription.trim(),
           type: defaultSessionType,
-          status: 'active'
+          status: "active",
         },
         data: {
-          mindmapData: defaultSessionType === 'mindmap' ? currentSessionData : {},
-          projectData: defaultSessionType !== 'mindmap' ? currentSessionData : {},
+          mindmapData:
+            defaultSessionType === "mindmap" ? currentSessionData : {},
+          projectData:
+            defaultSessionType !== "mindmap" ? currentSessionData : {},
           userInputs: [],
           preferences: {
-            theme: 'auto',
-            language: 'en',
+            theme: "auto",
+            language: "en",
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             autoSave: autoSave,
             notifications: {
               email: false,
               push: false,
-              inApp: true
+              inApp: true,
             },
             display: {
-              density: 'standard',
+              density: "standard",
               animations: true,
-              shortcuts: true
+              shortcuts: true,
             },
             privacy: {
               analytics: false,
               sharing: false,
-              publicProfile: false
-            }
-          }
+              publicProfile: false,
+            },
+          },
         },
         metadata: {
           userId: auth.user?.id,
           tags: [defaultSessionType],
-          priority: 'medium'
+          priority: "medium",
         },
         options: {
           autoSave,
-          compression: 'gzip',
+          compression: "gzip",
           backup: true,
           versionControl: true,
-          notifications: true
-        }
+          notifications: true,
+        },
       };
 
       setSaveProgress(50);
@@ -232,26 +241,27 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
 
       if (response.success) {
         setSaveProgress(100);
-        showSuccess('Session Saved', `Successfully saved "${newSessionName}"`);
+        showSuccess("Session Saved", `Successfully saved "${newSessionName}"`);
         toast.success(`Session "${newSessionName}" saved successfully!`, {
           duration: 4000,
-          actions: [{ label: 'View', onClick: () => setShowLoadDialog(true) }]
+          actions: [{ label: "View", onClick: () => setShowLoadDialog(true) }],
         });
         setShowSaveDialog(false);
-        setNewSessionName('');
-        setNewSessionDescription('');
-        
+        setNewSessionName("");
+        setNewSessionDescription("");
+
         // Refresh sessions list
         await loadUserSessions();
       } else {
-        throw new Error(response.error?.message || 'Failed to save session');
+        throw new Error(response.error?.message || "Failed to save session");
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to save session';
-      showError('Save Error', errorMessage);
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to save session";
+      showError("Save Error", errorMessage);
       toast.error(`Failed to save session: ${errorMessage}`, {
         duration: 6000,
-        actions: [{ label: 'Retry', onClick: () => handleSave() }]
+        actions: [{ label: "Retry", onClick: () => handleSave() }],
       });
       onError?.(errorMessage);
     } finally {
@@ -270,49 +280,58 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
     showSuccess,
     showError,
     onError,
-    loadUserSessions
+    loadUserSessions,
   ]);
 
   // Load selected session
-  const handleLoad = useCallback(async (sessionItem: SessionItem) => {
-    setIsLoading(true);
+  const handleLoad = useCallback(
+    async (sessionItem: SessionItem) => {
+      setIsLoading(true);
 
-    try {
-      let loadedData;
+      try {
+        let loadedData;
 
-      if (onLoad) {
-        loadedData = await onLoad(sessionItem.id);
-      } else {
-        const response = await loadSessionFull(sessionItem.id, auth.user?.id);
-        
-        if (response.success && response.data) {
-          loadedData = response.data.session?.data;
+        if (onLoad) {
+          loadedData = await onLoad(sessionItem.id);
         } else {
-          throw new Error(response.error?.message || 'Failed to load session');
-        }
-      }
+          const response = await loadSessionFull(sessionItem.id, auth.user?.id);
 
-      if (loadedData) {
-        setSelectedSession(sessionItem);
-        onSessionChange?.(sessionItem);
-        showSuccess('Session Loaded', `Successfully loaded "${sessionItem.name}"`);
-        toast.success(`Session "${sessionItem.name}" loaded successfully!`, {
-          duration: 3000
+          if (response.success && response.data) {
+            loadedData = response.data.session?.data;
+          } else {
+            throw new Error(
+              response.error?.message || "Failed to load session",
+            );
+          }
+        }
+
+        if (loadedData) {
+          setSelectedSession(sessionItem);
+          onSessionChange?.(sessionItem);
+          showSuccess(
+            "Session Loaded",
+            `Successfully loaded "${sessionItem.name}"`,
+          );
+          toast.success(`Session "${sessionItem.name}" loaded successfully!`, {
+            duration: 3000,
+          });
+          setShowLoadDialog(false);
+        }
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : "Failed to load session";
+        showError("Load Error", errorMessage);
+        toast.error(`Failed to load session: ${errorMessage}`, {
+          duration: 5000,
+          actions: [{ label: "Retry", onClick: () => handleLoad(sessionItem) }],
         });
-        setShowLoadDialog(false);
+        onError?.(errorMessage);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to load session';
-      showError('Load Error', errorMessage);
-      toast.error(`Failed to load session: ${errorMessage}`, {
-        duration: 5000,
-        actions: [{ label: 'Retry', onClick: () => handleLoad(sessionItem) }]
-      });
-      onError?.(errorMessage);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [auth.user?.id, onLoad, onSessionChange, showSuccess, showError, onError]);
+    },
+    [auth.user?.id, onLoad, onSessionChange, showSuccess, showError, onError],
+  );
 
   // Auto-save functionality
   const handleAutoSave = useCallback(async () => {
@@ -320,55 +339,71 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
 
     try {
       await autoSaveSession(currentSessionId, currentSessionData, auth.user.id);
-      toast.info('Session auto-saved', { duration: 2000 });
+      toast.info("Session auto-saved", { duration: 2000 });
     } catch (error) {
-      console.warn('Auto-save failed:', error);
-      toast.warning('Auto-save failed. Changes may be lost.', {
+      console.warn("Auto-save failed:", error);
+      toast.warning("Auto-save failed. Changes may be lost.", {
         duration: 5000,
-        actions: [{ label: 'Save Now', onClick: () => setShowSaveDialog(true) }]
+        actions: [
+          { label: "Save Now", onClick: () => setShowSaveDialog(true) },
+        ],
       });
     }
-  }, [currentSessionData, currentSessionId, auth.user?.id, toast, setShowSaveDialog]);
+  }, [
+    currentSessionData,
+    currentSessionId,
+    auth.user?.id,
+    toast,
+    setShowSaveDialog,
+  ]);
 
   // Search sessions
-  const handleSearch = useCallback(async (query: string) => {
-    if (!query.trim()) {
-      await loadUserSessions();
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const response = await searchSessions(query.trim(), auth.user?.id, 20);
-      
-      if (response.success && response.data?.sessions) {
-        const searchResults: SessionItem[] = response.data.sessions.map(session => ({
-          id: session.id,
-          name: session.name,
-          type: session.type as SessionItem['type'],
-          status: session.status as SessionItem['status'],
-          lastModified: session.updatedAt,
-          size: session.dataSize || 0,
-          isLocal: false,
-          isCollaborative: session.collaborators && session.collaborators.length > 0,
-          collaboratorCount: session.collaborators?.length,
-          preview: session.description
-        }));
-
-        setSessions(searchResults);
+  const handleSearch = useCallback(
+    async (query: string) => {
+      if (!query.trim()) {
+        await loadUserSessions();
+        return;
       }
-    } catch (error) {
-      console.error('Search failed:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [auth.user?.id, loadUserSessions]);
+
+      setIsLoading(true);
+      try {
+        const response = await searchSessions(query.trim(), auth.user?.id, 20);
+
+        if (response.success && response.data?.sessions) {
+          const searchResults: SessionItem[] = response.data.sessions.map(
+            (session) => ({
+              id: session.id,
+              name: session.name,
+              type: session.type as SessionItem["type"],
+              status: session.status as SessionItem["status"],
+              lastModified: session.updatedAt,
+              size: session.dataSize || 0,
+              isLocal: false,
+              isCollaborative:
+                session.collaborators && session.collaborators.length > 0,
+              collaboratorCount: session.collaborators?.length,
+              preview: session.description,
+            }),
+          );
+
+          setSessions(searchResults);
+        }
+      } catch (error) {
+        console.error("Search failed:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [auth.user?.id, loadUserSessions],
+  );
 
   // Filter sessions
-  const filteredSessions = sessions.filter(session => {
+  const filteredSessions = sessions.filter((session) => {
     if (searchQuery.trim()) {
-      return session.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-             session.preview?.toLowerCase().includes(searchQuery.toLowerCase());
+      return (
+        session.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        session.preview?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
     }
     return true;
   });
@@ -404,7 +439,8 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
             <div className="session-card__info">
               <h4>{selectedSession.name}</h4>
               <p className="session-card__meta">
-                {selectedSession.type} • {new Date(selectedSession.lastModified).toLocaleDateString()}
+                {selectedSession.type} •{" "}
+                {new Date(selectedSession.lastModified).toLocaleDateString()}
                 {selectedSession.isCollaborative && (
                   <span className="session-card__collaborative">
                     • {selectedSession.collaboratorCount} collaborators
@@ -412,7 +448,9 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
                 )}
               </p>
               {selectedSession.preview && (
-                <p className="session-card__preview">{selectedSession.preview}</p>
+                <p className="session-card__preview">
+                  {selectedSession.preview}
+                </p>
               )}
             </div>
             <div className="session-card__status">
@@ -430,10 +468,33 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
           <ProgressIndicator
             progress={{
               overall: saveProgress,
-              tasks: { completed: Math.floor(saveProgress / 25), total: 4, inProgress: 0, notStarted: 0, blocked: 0 },
-              phases: { completed: Math.floor(saveProgress / 50), total: 2, inProgress: 0, notStarted: 0, blocked: 0 },
-              milestones: { completed: saveProgress === 100 ? 1 : 0, total: 1, upcoming: 0, overdue: 0, missed: 0 },
-              timeline: { daysElapsed: 1, daysTotal: 1, daysRemaining: 0, isOnTrack: true }
+              tasks: {
+                completed: Math.floor(saveProgress / 25),
+                total: 4,
+                inProgress: 0,
+                notStarted: 0,
+                blocked: 0,
+              },
+              phases: {
+                completed: Math.floor(saveProgress / 50),
+                total: 2,
+                inProgress: 0,
+                notStarted: 0,
+                blocked: 0,
+              },
+              milestones: {
+                completed: saveProgress === 100 ? 1 : 0,
+                total: 1,
+                upcoming: 0,
+                overdue: 0,
+                missed: 0,
+              },
+              timeline: {
+                daysElapsed: 1,
+                daysTotal: 1,
+                daysRemaining: 0,
+                isOnTrack: true,
+              },
             }}
             mode="compact"
             showLabels={false}
@@ -444,8 +505,10 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
       {/* Auto-save Status */}
       {autoSave && currentSessionData && (
         <div className="session-manager__autosave">
-          <span className={`autosave-status ${connectivity.isOnline ? 'online' : 'offline'}`}>
-            Auto-save {connectivity.isOnline ? 'enabled' : 'paused (offline)'}
+          <span
+            className={`autosave-status ${connectivity.isOnline ? "online" : "offline"}`}
+          >
+            Auto-save {connectivity.isOnline ? "enabled" : "paused (offline)"}
           </span>
         </div>
       )}
@@ -456,7 +519,12 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
           <div className="modal">
             <div className="modal__header">
               <h3>Save Session</h3>
-              <button onClick={() => setShowSaveDialog(false)} className="modal__close">×</button>
+              <button
+                onClick={() => setShowSaveDialog(false)}
+                className="modal__close"
+              >
+                ×
+              </button>
             </div>
             <div className="modal__content">
               <div className="form-field">
@@ -483,7 +551,10 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
               </div>
             </div>
             <div className="modal__actions">
-              <button onClick={() => setShowSaveDialog(false)} className="btn btn--secondary">
+              <button
+                onClick={() => setShowSaveDialog(false)}
+                className="btn btn--secondary"
+              >
                 Cancel
               </button>
               <button
@@ -491,7 +562,7 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
                 disabled={!newSessionName.trim() || isLoading}
                 className="btn btn--primary"
               >
-                {isLoading ? 'Saving...' : 'Save Session'}
+                {isLoading ? "Saving..." : "Save Session"}
               </button>
             </div>
           </div>
@@ -504,7 +575,12 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
           <div className="modal modal--large">
             <div className="modal__header">
               <h3>Load Session</h3>
-              <button onClick={() => setShowLoadDialog(false)} className="modal__close">×</button>
+              <button
+                onClick={() => setShowLoadDialog(false)}
+                className="modal__close"
+              >
+                ×
+              </button>
             </div>
             <div className="modal__content">
               {/* Search and Filter */}
@@ -537,7 +613,9 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
                   <div className="loading-state">Loading sessions...</div>
                 ) : filteredSessions.length === 0 ? (
                   <div className="empty-state">
-                    {searchQuery ? 'No sessions found matching your search.' : 'No sessions available.'}
+                    {searchQuery
+                      ? "No sessions found matching your search."
+                      : "No sessions available."}
                   </div>
                 ) : (
                   filteredSessions.map((session) => (
@@ -545,7 +623,8 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
                       <div className="session-item__info">
                         <h4>{session.name}</h4>
                         <p className="session-item__meta">
-                          {session.type} • {new Date(session.lastModified).toLocaleDateString()}
+                          {session.type} •{" "}
+                          {new Date(session.lastModified).toLocaleDateString()}
                           {session.isCollaborative && (
                             <span className="collaborative-indicator">
                               • {session.collaboratorCount} collaborators
@@ -553,7 +632,9 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
                           )}
                         </p>
                         {session.preview && (
-                          <p className="session-item__preview">{session.preview}</p>
+                          <p className="session-item__preview">
+                            {session.preview}
+                          </p>
                         )}
                       </div>
                       <div className="session-item__actions">
@@ -574,7 +655,10 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
               </div>
             </div>
             <div className="modal__actions">
-              <button onClick={() => setShowLoadDialog(false)} className="btn btn--secondary">
+              <button
+                onClick={() => setShowLoadDialog(false)}
+                className="btn btn--secondary"
+              >
                 Cancel
               </button>
             </div>

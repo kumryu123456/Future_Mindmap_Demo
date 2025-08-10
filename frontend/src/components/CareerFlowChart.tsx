@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useEffect } from 'react';
+import React, { useCallback, useMemo, useEffect } from "react";
 import {
   ReactFlow,
   addEdge,
@@ -10,15 +10,15 @@ import {
   type Edge,
   type Connection,
   type NodeTypes,
-} from '@xyflow/react';
-import { CareerFlow } from '../types/detailedProfile';
-import '@xyflow/react/dist/style.css';
-import './CareerFlowChart.css';
+} from "@xyflow/react";
+import type { CareerFlow } from "../types/detailedProfile";
+import "@xyflow/react/dist/style.css";
+import "./CareerFlowChart.css";
 
 interface CareerStepNodeData {
   label: string;
-  level: 'entry' | 'junior' | 'mid' | 'senior' | 'lead';
-  status: 'completed' | 'current' | 'planned';
+  level: "entry" | "junior" | "mid" | "senior" | "lead";
+  status: "completed" | "current" | "planned";
   period?: string;
   company?: string;
   skills?: string[];
@@ -32,55 +32,55 @@ interface CareerStepNodeProps {
 const CareerStepNode: React.FC<CareerStepNodeProps> = ({ data, selected }) => {
   const getStatusColor = () => {
     switch (data.status) {
-      case 'completed':
+      case "completed":
         return {
-          border: '#10b981',
-          background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
-          color: '#065f46'
+          border: "#10b981",
+          background: "linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)",
+          color: "#065f46",
         };
-      case 'current':
+      case "current":
         return {
-          border: '#3b82f6',
-          background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
-          color: '#1e40af'
+          border: "#3b82f6",
+          background: "linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)",
+          color: "#1e40af",
         };
-      case 'planned':
+      case "planned":
         return {
-          border: '#6b7280',
-          background: 'linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)',
-          color: '#374151'
+          border: "#6b7280",
+          background: "linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)",
+          color: "#374151",
         };
       default:
         return {
-          border: '#e5e7eb',
-          background: 'white',
-          color: '#6b7280'
+          border: "#e5e7eb",
+          background: "white",
+          color: "#6b7280",
         };
     }
   };
 
   const getLevelEmoji = () => {
     switch (data.level) {
-      case 'entry':
-        return '🌱';
-      case 'junior':
-        return '🚀';
-      case 'mid':
-        return '⚡';
-      case 'senior':
-        return '🎯';
-      case 'lead':
-        return '👑';
+      case "entry":
+        return "🌱";
+      case "junior":
+        return "🚀";
+      case "mid":
+        return "⚡";
+      case "senior":
+        return "🎯";
+      case "lead":
+        return "👑";
       default:
-        return '📦';
+        return "📦";
     }
   };
 
   const statusStyle = getStatusColor();
 
   return (
-    <div 
-      className={`career-step-node ${data.status} ${selected ? 'selected' : ''}`}
+    <div
+      className={`career-step-node ${data.status} ${selected ? "selected" : ""}`}
       style={{
         borderColor: statusStyle.border,
         background: statusStyle.background,
@@ -91,17 +91,13 @@ const CareerStepNode: React.FC<CareerStepNodeProps> = ({ data, selected }) => {
         <span className="level-icon">{getLevelEmoji()}</span>
         <div className="node-info">
           <div className="node-title">{data.label}</div>
-          {data.company && (
-            <div className="node-company">{data.company}</div>
-          )}
+          {data.company && <div className="node-company">{data.company}</div>}
         </div>
       </div>
-      
-      {data.period && (
-        <div className="node-period">{data.period}</div>
-      )}
-      
-      {data.status === 'current' && (
+
+      {data.period && <div className="node-period">{data.period}</div>}
+
+      {data.status === "current" && (
         <div className="current-indicator">
           <div className="pulse-dot"></div>
           <span>현재</span>
@@ -122,28 +118,31 @@ interface CareerFlowChartProps {
   height?: number;
 }
 
-const CareerFlowChart: React.FC<CareerFlowChartProps> = ({ 
-  careerFlow, 
-  title, 
+const CareerFlowChart: React.FC<CareerFlowChartProps> = ({
+  careerFlow,
+  title,
   interactive = false,
-  height = 400 
+  height = 400,
 }) => {
-  const initialNodes: Node[] = useMemo(() => 
-    careerFlow.nodes.map(node => ({
-      ...node,
-      type: 'careerStep',
-      draggable: interactive,
-    })), [careerFlow.nodes, interactive]);
+  const initialNodes: Node[] = useMemo(
+    () =>
+      careerFlow.nodes.map((node) => ({
+        ...node,
+        type: "careerStep",
+        draggable: interactive,
+      })),
+    [careerFlow.nodes, interactive],
+  );
 
-  const initialEdges: Edge[] = useMemo(() => 
-    careerFlow.edges.map(edge => ({
-      ...edge,
-      style: { stroke: '#94a3b8', strokeWidth: 2 },
-      markerEnd: {
-        type: 'arrowclosed',
-        color: '#94a3b8',
-      },
-    })), [careerFlow.edges]);
+  const initialEdges: Edge[] = useMemo(
+    () =>
+      careerFlow.edges.map((edge) => ({
+        ...edge,
+        style: { stroke: "#94a3b8", strokeWidth: 2 },
+        markerEnd: "arrowclosed",
+      })),
+    [careerFlow.edges],
+  );
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -163,7 +162,7 @@ const CareerFlowChart: React.FC<CareerFlowChartProps> = ({
         setEdges((eds) => addEdge(params, eds));
       }
     },
-    [interactive, setEdges]
+    [interactive, setEdges],
   );
 
   return (
@@ -185,7 +184,7 @@ const CareerFlowChart: React.FC<CareerFlowChartProps> = ({
           </div>
         </div>
       </div>
-      
+
       <ReactFlow
         nodes={nodes}
         edges={edges}

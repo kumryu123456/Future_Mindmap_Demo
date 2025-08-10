@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { BrowseProfile, UserProfile, CareerMap } from "../types/career";
-import { careerAPI } from "../services/mockCareerApi";
+import type { CareerMap } from "../types/career";
+import { careerAPI, type BrowseProfile } from "../services/mockCareerApi";
 import { useProfileSearch } from "../hooks/useProfileSearch";
 import { useKeyboardNavigation } from "../hooks/useKeyboardNavigation";
 import { useTheme } from "@/components/theme-provider";
@@ -58,7 +58,6 @@ const Browse: React.FC<BrowseProps> = ({ onProfileSelect }) => {
     searchQuery,
     setSearchQuery,
     debouncedQuery,
-    filteredProfiles,
     searchStats,
     isSearching,
   } = useProfileSearch({ profiles });
@@ -312,22 +311,6 @@ const Browse: React.FC<BrowseProps> = ({ onProfileSelect }) => {
     return result;
   }, [allProfilesData, debouncedQuery, selectedTags, sortBy]);
 
-  // 🎯 Phase 2: 키보드 네비게이션 훅 (finalFilteredProfiles 정의 후에 위치)
-  const keyboardNavigation = useKeyboardNavigation({
-    profiles: finalFilteredProfiles,
-    currentProfile: selectedProfile,
-    isEnabled: viewMode === "profile" && !!selectedProfile,
-    onProfileChange: (profile) => {
-      setSelectedProfile(profile);
-      onProfileSelect?.(profile);
-    },
-    onClose: () => {
-      setSelectedProfile(null);
-      setViewMode("grid");
-    },
-    onTogglePreview: () => setShowNavigation(!showNavigation),
-  });
-
   // 🎯 Phase 2: 개선된 소셜 인터랙션 핸들러
   const handleSocialInteraction = async (
     type: "like" | "comment" | "follow",
@@ -458,10 +441,6 @@ const Browse: React.FC<BrowseProps> = ({ onProfileSelect }) => {
     setShowNavigation(true);
   };
 
-  const handleCareerMapView = (careerMap: CareerMap) => {
-    setSelectedCareerMap(careerMap);
-  };
-
   if (selectedCareerMap) {
     return (
       <div className="browse-career-viewer">
@@ -478,13 +457,6 @@ const Browse: React.FC<BrowseProps> = ({ onProfileSelect }) => {
           <p>커리어 맵 뷰어는 곧 구현될 예정입니다.</p>
           <button onClick={() => setSelectedCareerMap(null)}>닫기</button>
         </div>
-        {/* 
-        <CareerMapViewer 
-          careerMap={selectedCareerMap}
-          readOnly={true}
-          onClose={() => setSelectedCareerMap(null)}
-        />
-        */}
       </div>
     );
   }

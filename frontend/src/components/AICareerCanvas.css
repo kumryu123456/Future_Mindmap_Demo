@@ -429,7 +429,7 @@
 }
 
 .tab-btn:after {
-  content: '';
+  content: "";
   position: absolute;
   bottom: -1rem;
   left: 0;
@@ -554,13 +554,15 @@
   margin-top: 0.5rem;
 }
 
-.skill-tags, .company-list {
+.skill-tags,
+.company-list {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
 }
 
-.skill-tag, .company-tag {
+.skill-tag,
+.company-tag {
   padding: 0.25rem 0.75rem;
   background: #e0f2fe;
   color: #0284c7;
@@ -683,7 +685,8 @@
   gap: 0.75rem;
 }
 
-.reply-btn, .like-btn {
+.reply-btn,
+.like-btn {
   padding: 0.25rem 0.75rem;
   background: none;
   border: 1px solid #d1d5db;
@@ -700,7 +703,8 @@
   color: #9ca3af;
 }
 
-.reply-btn:hover, .like-btn:hover {
+.reply-btn:hover,
+.like-btn:hover {
   background: #f3f4f6;
   border-color: #3b82f6;
   color: #3b82f6;
@@ -1403,7 +1407,7 @@
   .bottom-input-panel {
     bottom: 20px;
   }
-  
+
   .input-container {
     min-width: 350px;
     max-width: calc(100vw - 2rem);
@@ -2024,4 +2028,17 @@
   border: 2px solid #64748b;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   color: #e2e8f0;
+}
+
+.career-node:hover .expand-buttons {
+  opacity: 1 !important;
+}
+.expand-btn:hover {
+  transform: scale(1.1);
+  transition: transform 0.1s ease;
+}
+.expand-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
 }
