@@ -1,0 +1,249 @@
+/* Enhanced LoadingSpinner Animations */
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scale-bounce {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+@keyframes success-check {
+  0% {
+    stroke-dasharray: 0, 100;
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dasharray: 100, 0;
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes error-shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  10%, 30%, 50%, 70%, 90% {
+    transform: translateX(-2px);
+  }
+  20%, 40%, 60%, 80% {
+    transform: translateX(2px);
+  }
+}
+
+@keyframes warning-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.8;
+  }
+}
+
+@keyframes idle-breathe {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.3;
+  }
+  50% {
+    transform: scale(1.02);
+    opacity: 0.5;
+  }
+}
+
+/* Utility classes for enhanced spinner states */
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+.animate-scale-bounce {
+  animation: scale-bounce 0.6s ease-in-out;
+}
+
+.animate-success-check {
+  animation: success-check 0.8s ease-out;
+}
+
+.animate-error-shake {
+  animation: error-shake 0.5s ease-in-out;
+}
+
+.animate-warning-pulse {
+  animation: warning-pulse 1.5s ease-in-out infinite;
+}
+
+.animate-idle-breathe {
+  animation: idle-breathe 3s ease-in-out infinite;
+}
+
+/* State-specific color variants */
+.loading-spinner-loading {
+  @apply text-blue-600 dark:text-blue-400;
+}
+
+.loading-spinner-success {
+  @apply text-green-600 dark:text-green-400;
+}
+
+.loading-spinner-error {
+  @apply text-red-600 dark:text-red-400;
+}
+
+.loading-spinner-warning {
+  @apply text-yellow-600 dark:text-yellow-400;
+}
+
+.loading-spinner-idle {
+  @apply text-gray-400 dark:text-gray-500;
+}
+
+/* Size variants with proper spacing */
+.spinner-container {
+  @apply inline-flex items-center justify-center;
+}
+
+.spinner-container.spinner-sm {
+  @apply gap-1;
+}
+
+.spinner-container.spinner-md {
+  @apply gap-2;
+}
+
+.spinner-container.spinner-lg {
+  @apply gap-2;
+}
+
+.spinner-container.spinner-xl {
+  @apply gap-3;
+}
+
+/* Message styling */
+.spinner-message {
+  @apply text-sm font-medium;
+  transition: all 0.2s ease-in-out;
+}
+
+.spinner-message.spinner-sm {
+  @apply text-xs;
+}
+
+.spinner-message.spinner-lg {
+  @apply text-base;
+}
+
+.spinner-message.spinner-xl {
+  @apply text-lg;
+}
+
+/* Progress integration */
+.spinner-with-progress {
+  @apply flex flex-col items-center space-y-2;
+}
+
+.spinner-with-progress.horizontal {
+  @apply flex-row space-y-0 space-x-3;
+}
+
+/* Accessibility enhancements */
+.spinner-accessible {
+  @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
+}
+
+.spinner-accessible.loading {
+  @apply focus:ring-blue-500;
+}
+
+.spinner-accessible.success {
+  @apply focus:ring-green-500;
+}
+
+.spinner-accessible.error {
+  @apply focus:ring-red-500;
+}
+
+.spinner-accessible.warning {
+  @apply focus:ring-yellow-500;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .loading-spinner-loading {
+    @apply text-blue-800 dark:text-blue-200;
+  }
+  
+  .loading-spinner-success {
+    @apply text-green-800 dark:text-green-200;
+  }
+  
+  .loading-spinner-error {
+    @apply text-red-800 dark:text-red-200;
+  }
+  
+  .loading-spinner-warning {
+    @apply text-yellow-800 dark:text-yellow-200;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin,
+  .animate-bounce,
+  .animate-pulse,
+  .animate-fade-in,
+  .animate-scale-bounce,
+  .animate-success-check,
+  .animate-error-shake,
+  .animate-warning-pulse,
+  .animate-idle-breathe {
+    animation: none;
+  }
+  
+  /* Provide static states for reduced motion */
+  .loading-spinner-loading {
+    @apply opacity-60;
+  }
+  
+  .loading-spinner-success,
+  .loading-spinner-error,
+  .loading-spinner-warning {
+    @apply opacity-100;
+  }
+  
+  .loading-spinner-idle {
+    @apply opacity-30;
+  }
+}
+
+/* Print styles */
+@media print {
+  .loading-spinner-loading {
+    @apply hidden;
+  }
+  
+  .loading-spinner-success::after {
+    content: "✓";
+  }
+  
+  .loading-spinner-error::after {
+    content: "✗";
+  }
+  
+  .loading-spinner-warning::after {
+    content: "⚠";
+  }
+}

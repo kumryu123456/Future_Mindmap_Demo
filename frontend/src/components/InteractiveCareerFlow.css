@@ -1,0 +1,552 @@
+/* Interactive Career Flow Styles */
+.interactive-career-flow {
+  width: 100%;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Flow Header */
+.flow-header {
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-primary);
+}
+
+.flow-header h3 {
+  margin: 0 0 1rem 0;
+  color: var(--text-primary);
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.flow-controls {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* View Mode Selector */
+.view-mode-selector {
+  display: flex;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-secondary);
+}
+
+.view-mode-selector button {
+  padding: 0.5rem 1rem;
+  border: none;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  border-right: 1px solid var(--border-color);
+}
+
+.view-mode-selector button:last-child {
+  border-right: none;
+}
+
+.view-mode-selector button:hover {
+  background: var(--bg-primary);
+}
+
+.view-mode-selector button.active {
+  background: #3b82f6;
+  color: white;
+}
+
+.view-mode-selector button:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: -2px;
+}
+
+/* Action Buttons */
+.action-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.add-btn,
+.delete-btn,
+.minimap-toggle {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+}
+
+.add-btn:hover {
+  background: #ecfdf5;
+  border-color: #10b981;
+  color: #065f46;
+}
+
+.delete-btn:hover:not(:disabled) {
+  background: #fef2f2;
+  border-color: #ef4444;
+  color: #dc2626;
+}
+
+.delete-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.minimap-toggle:hover {
+  background: #f0f9ff;
+  border-color: #3b82f6;
+  color: #1e40af;
+}
+
+.add-btn:focus-visible,
+.delete-btn:focus-visible,
+.minimap-toggle:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Chart Legend */
+.chart-legend {
+  display: flex;
+  gap: 1.5rem;
+  padding: 0.75rem 1.5rem;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+}
+
+.legend-dot.completed {
+  background: #10b981;
+  border-color: #065f46;
+}
+
+.legend-dot.current {
+  background: #3b82f6;
+  border-color: #1e40af;
+  animation: pulse 2s infinite;
+}
+
+.legend-dot.planned {
+  background: #6b7280;
+  border-color: #374151;
+}
+
+/* Enhanced Career Node */
+.enhanced-career-node {
+  padding: 1rem;
+  border: 2px solid;
+  border-radius: 12px;
+  min-width: 200px;
+  max-width: 350px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  position: relative;
+}
+
+.enhanced-career-node:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.enhanced-career-node.selected {
+  animation: glow 2s ease-in-out infinite;
+}
+
+@keyframes glow {
+  0%, 100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.1);
+  }
+}
+
+/* Node Header */
+.node-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  position: relative;
+}
+
+.level-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.node-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.node-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  line-height: 1.3;
+  margin-bottom: 0.25rem;
+  word-wrap: break-word;
+}
+
+.node-company {
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.expand-btn {
+  position: absolute;
+  top: -0.25rem;
+  right: -0.25rem;
+  width: 24px;
+  height: 24px;
+  border: 1px solid currentColor;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  font-weight: 600;
+  color: inherit;
+  opacity: 0.7;
+  transition: all 0.2s ease;
+}
+
+.expand-btn:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+.expand-btn:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Node Period */
+.node-period {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+/* Current Indicator */
+.current-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  background: currentColor;
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+  }
+}
+
+/* Expanded Content */
+.expanded-content {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 500px;
+  }
+}
+
+/* Disable animations for users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  /* Disable all animations */
+  .enhanced-career-node.selected,
+  .legend-dot.current,
+  .pulse-dot {
+    animation: none;
+  }
+  
+  /* Disable transitions */
+  .enhanced-career-node,
+  .expand-btn,
+  .add-btn,
+  .delete-btn,
+  .minimap-toggle,
+  .view-mode-selector button {
+    transition: none;
+  }
+  
+  /* Remove transform effects on hover */
+  .enhanced-career-node:hover {
+    transform: none;
+  }
+  
+  .expand-btn:hover {
+    transform: none;
+  }
+  
+  /* Disable slideDown animation for expanded content */
+  .expanded-content {
+    animation: none;
+  }
+}
+
+.node-description {
+  margin-bottom: 0.75rem;
+}
+
+.node-description p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  opacity: 0.9;
+}
+
+.node-achievements,
+.node-technologies,
+.node-skills {
+  margin-bottom: 0.75rem;
+}
+
+.node-achievements h5,
+.node-technologies h5,
+.node-skills h5 {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.node-achievements ul {
+  margin: 0;
+  padding-left: 1.25rem;
+  list-style: none;
+}
+
+.node-achievements li {
+  position: relative;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  margin-bottom: 0.25rem;
+  padding-left: 1rem;
+}
+
+.node-achievements li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  font-weight: 600;
+}
+
+.tech-tags,
+.skill-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.tech-tag,
+.skill-tag {
+  padding: 0.25rem 0.5rem;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+/* Panels */
+.info-panel,
+.zoom-panel {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.75rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.selected-info h4 {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.9rem;
+  color: #1f2937;
+}
+
+.selected-info p {
+  margin: 0.25rem 0;
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.hint {
+  font-style: italic;
+  opacity: 0.8;
+}
+
+.zoom-info {
+  font-size: 0.8rem;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+/* React Flow Overrides */
+.react-flow__node {
+  font-family: inherit;
+}
+
+.react-flow__handle {
+  width: 12px;
+  height: 12px;
+  background: #6b7280;
+  border: 2px solid white;
+  cursor: crosshair;
+  opacity: 0;
+  transition: all 0.2s ease;
+}
+
+.react-flow__node:hover .react-flow__handle {
+  opacity: 1;
+}
+
+.react-flow__handle:hover {
+  transform: scale(1.2);
+  z-index: 1000;
+}
+
+.react-flow__handle:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+  opacity: 1;
+  transform: scale(1.2);
+  z-index: 1000;
+}
+
+.react-flow__handle-connecting {
+  background: #3b82f6;
+  opacity: 1;
+}
+
+.react-flow__edge-path {
+  stroke-width: 2;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: #3b82f6;
+  stroke-width: 3;
+}
+
+/* Minimap Styles */
+.react-flow__minimap {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Controls Customization */
+.react-flow__controls {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.react-flow__controls-button {
+  background: white;
+  border-bottom: 1px solid #e5e7eb;
+  color: #6b7280;
+}
+
+.react-flow__controls-button:hover {
+  background: #f3f4f6;
+  color: #1f2937;
+}
+
+.react-flow__controls-button:last-child {
+  border-bottom: none;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .flow-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .view-mode-selector {
+    width: 100%;
+  }
+  
+  .action-buttons {
+    width: 100%;
+    justify-content: space-between;
+  }
+  
+  .enhanced-career-node {
+    min-width: 180px;
+    max-width: 280px;
+  }
+  
+  .node-title {
+    font-size: 0.85rem;
+  }
+  
+  .node-company,
+  .node-period {
+    font-size: 0.7rem;
+  }
+}

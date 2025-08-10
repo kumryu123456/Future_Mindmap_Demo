@@ -1,0 +1,282 @@
+/* DetailModal Animation Styles */
+
+.detail-modal {
+  transform-origin: center center;
+  transition: all var(--animation-duration, 300ms) cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+/* Size-specific animations */
+.detail-modal--compact {
+  --modal-scale: 0.9;
+}
+
+.detail-modal--normal {
+  --modal-scale: 1.0;
+}
+
+.detail-modal--expanded {
+  --modal-scale: 1.05;
+}
+
+.detail-modal--fullscreen {
+  --modal-scale: 1.0;
+}
+
+/* Animation states */
+.detail-modal--animating {
+  transition: all var(--animation-duration, 300ms) cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+.detail-modal--expanding {
+  animation: detailModalExpand var(--animation-duration, 300ms) cubic-bezier(0.4, 0.0, 0.2, 1) forwards;
+}
+
+.detail-modal--collapsing {
+  animation: detailModalCollapse var(--animation-duration, 300ms) cubic-bezier(0.4, 0.0, 0.2, 1) forwards;
+}
+
+.detail-modal--transitioning {
+  transform: scale(var(--modal-scale, 1));
+  opacity: 0.9;
+  transition: all var(--animation-duration, 300ms) cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+/* Keyframe animations */
+@keyframes detailModalExpand {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.02);
+    opacity: 0.95;
+  }
+  100% {
+    transform: scale(1.0);
+    opacity: 1;
+  }
+}
+
+@keyframes detailModalCollapse {
+  0% {
+    transform: scale(1.0);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.98);
+    opacity: 0.95;
+  }
+  100% {
+    transform: scale(0.95);
+    opacity: 0.9;
+  }
+}
+
+@keyframes detailModalFadeIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.9) translateY(-20px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1.0) translateY(0);
+  }
+}
+
+@keyframes detailModalFadeOut {
+  0% {
+    opacity: 1;
+    transform: scale(1.0) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.9) translateY(-20px);
+  }
+}
+
+/* Backdrop animations */
+.detail-modal-backdrop {
+  animation: backdropFadeIn var(--animation-duration, 300ms) ease-out;
+}
+
+.detail-modal-backdrop--closing {
+  animation: backdropFadeOut var(--animation-duration, 300ms) ease-in forwards;
+}
+
+@keyframes backdropFadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes backdropFadeOut {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Content animations */
+.detail-modal-content {
+  transition: all var(--animation-duration, 300ms) ease-out;
+}
+
+.detail-modal-content--loading {
+  opacity: 0.6;
+  filter: blur(2px);
+}
+
+.detail-modal-content--loaded {
+  opacity: 1;
+  filter: blur(0);
+}
+
+/* Header animations */
+.detail-modal-header {
+  transition: all var(--animation-duration, 300ms) ease-out;
+}
+
+.detail-modal-header--compact .detail-modal-header-subtitle {
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  transition: all var(--animation-duration, 300ms) ease-out;
+}
+
+.detail-modal-header--normal .detail-modal-header-subtitle,
+.detail-modal-header--expanded .detail-modal-header-subtitle,
+.detail-modal-header--fullscreen .detail-modal-header-subtitle {
+  opacity: 1;
+  max-height: 50px;
+  transition: all var(--animation-duration, 300ms) ease-out;
+}
+
+/* Button hover effects */
+.detail-modal-button {
+  transition: all 150ms ease;
+  transform: translateY(0);
+}
+
+.detail-modal-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.detail-modal-button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Size control animations */
+.detail-modal-size-controls {
+  transition: all var(--animation-duration, 300ms) ease-out;
+}
+
+.detail-modal-size-control {
+  transition: all 150ms ease;
+  opacity: 0.7;
+}
+
+.detail-modal-size-control:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+.detail-modal-size-control--active {
+  opacity: 1;
+  transform: scale(1.0);
+}
+
+/* Resize handle animations */
+.detail-modal-resize-handle {
+  transition: opacity 200ms ease;
+  opacity: 0;
+}
+
+.detail-modal:hover .detail-modal-resize-handle {
+  opacity: 0.5;
+}
+
+.detail-modal-resize-handle:hover {
+  opacity: 1 !important;
+}
+
+/* Responsive animations */
+@media (max-width: 768px) {
+  .detail-modal--fullscreen {
+    animation: detailModalMobileExpand var(--animation-duration, 300ms) ease-out forwards;
+  }
+  
+  @keyframes detailModalMobileExpand {
+    0% {
+      transform: translateY(100%);
+      border-radius: 12px;
+    }
+    100% {
+      transform: translateY(0);
+      border-radius: 0;
+    }
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .detail-modal {
+    border: 2px solid;
+  }
+  
+  .detail-modal-button {
+    border: 2px solid;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .detail-modal,
+  .detail-modal-backdrop,
+  .detail-modal-content,
+  .detail-modal-header,
+  .detail-modal-button,
+  .detail-modal-size-controls,
+  .detail-modal-size-control,
+  .detail-modal-resize-handle {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Focus styles for accessibility */
+.detail-modal:focus {
+  outline: 3px solid var(--focus-color, #667eea);
+  outline-offset: 2px;
+}
+
+.detail-modal-button:focus {
+  outline: 2px solid var(--focus-color, #667eea);
+  outline-offset: 2px;
+}
+
+/* Print styles */
+@media print {
+  .detail-modal-backdrop {
+    position: relative !important;
+    background: white !important;
+  }
+  
+  .detail-modal {
+    box-shadow: none !important;
+    border: 1px solid black !important;
+    position: relative !important;
+    transform: none !important;
+  }
+  
+  .detail-modal-header,
+  .detail-modal-content {
+    page-break-inside: avoid;
+  }
+}

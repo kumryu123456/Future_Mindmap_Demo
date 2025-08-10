@@ -1,0 +1,229 @@
+.header {
+  background: white;
+  border-bottom: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  padding: 0;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.header-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+}
+
+/* 로고 및 브랜드 */
+.header-brand {
+  flex-shrink: 0;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.logo-icon {
+  font-size: 1.5rem;
+}
+
+.logo-text {
+  color: #3b82f6;
+}
+
+/* 네비게이션 */
+.header-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.nav-button {
+  padding: 0.5rem 1rem;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  font-size: 0.95rem;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.nav-button:hover {
+  color: #3b82f6;
+  background: #f1f5f9;
+}
+
+.nav-button.active {
+  color: #3b82f6;
+  background: #eff6ff;
+  font-weight: 600;
+}
+
+/* Header Theme Styles */
+.header.light {
+  background: white;
+  color: #1f2937;
+}
+
+.header.dark {
+  background: #1f2937;
+  color: #f3f4f6;
+  border-bottom-color: #374151;
+}
+
+.header.dark .logo {
+  color: #f3f4f6;
+}
+
+.header.dark .logo-text {
+  color: #60a5fa;
+}
+
+.header.dark .nav-button {
+  color: #9ca3af;
+}
+
+.header.dark .nav-button:hover {
+  color: #60a5fa;
+  background: #374151;
+}
+
+.header.dark .nav-button.active {
+  color: #60a5fa;
+  background: #1e3a8a;
+}
+
+.header.dark .auth-button.login {
+  color: #9ca3af;
+  border-color: #4b5563;
+}
+
+.header.dark .auth-button.login:hover {
+  color: #f3f4f6;
+  border-color: #6b7280;
+}
+
+/* 헤더 우측 영역 */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-shrink: 0;
+}
+
+.theme-toggle-header {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.5rem;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #374151;
+  backdrop-filter: blur(10px);
+}
+
+.theme-toggle-header:hover {
+  background: rgba(255, 255, 255, 1);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.header.dark .theme-toggle-header {
+  background: rgba(31, 41, 55, 0.9);
+  border-color: #4b5563;
+  color: #f3f4f6;
+}
+
+.header.dark .theme-toggle-header:hover {
+  background: rgba(31, 41, 55, 1);
+}
+
+/* 로그인/회원가입 버튼 */
+.header-auth {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.auth-button {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.auth-button.login {
+  background: transparent;
+  color: #6b7280;
+  border-color: #d1d5db;
+}
+
+.auth-button.login:hover {
+  color: #374151;
+  border-color: #9ca3af;
+}
+
+.auth-button.signup {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
+
+.auth-button.signup:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+}
+
+/* 반응형 디자인 */
+@media (max-width: 768px) {
+  .header-content {
+    padding: 0 1rem;
+    height: 56px;
+  }
+
+  .logo-text {
+    display: none;
+  }
+
+  .nav-button {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+  }
+
+  .auth-button {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .header-nav {
+    gap: 0.25rem;
+  }
+
+  .nav-button {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+  }
+
+  .header-auth {
+    gap: 0.5rem;
+  }
+}
