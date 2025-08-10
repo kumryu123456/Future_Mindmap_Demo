@@ -1,0 +1,22 @@
+{
+  "name": "future-mindmap-backend-demo",
+  "version": "1.0.0",
+  "description": "Supabase Edge Functions for Future Mindmap application",
+  "main": "index.js",
+  "scripts": {
+    "dev": "supabase functions serve",
+    "deploy": "supabase functions deploy",
+    "test": "deno test --allow-all"
+  },
+  "keywords": [
+    "supabase",
+    "edge-functions",
+    "deno",
+    "mindmap"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@supabase/functions-js": "^2.1.5"
+  }
+}
