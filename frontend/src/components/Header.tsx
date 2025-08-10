@@ -1,10 +1,11 @@
-import React from 'react';
-import './Header.css';
-import { useTheme } from '../contexts/ThemeContext';
+import React from "react";
+import "./Header.css";
+import { useTheme } from "../contexts/ThemeContext";
+import { NavLink } from "react-router";
 
 interface HeaderProps {
-  activeView: 'career' | 'browse' | 'dashboard';
-  onViewChange: (view: 'career' | 'browse' | 'dashboard') => void;
+  activeView: "career" | "browse" | "dashboard";
+  onViewChange: (view: "career" | "browse" | "dashboard") => void;
 }
 
 const Header: React.FC<HeaderProps> = ({ activeView, onViewChange }) => {
@@ -23,34 +24,40 @@ const Header: React.FC<HeaderProps> = ({ activeView, onViewChange }) => {
 
         {/* 네비게이션 */}
         <nav className="header-nav">
-          <button 
-            className={`nav-button ${activeView === 'career' ? 'active' : ''}`}
-            onClick={() => onViewChange('career')}
+          <NavLink
+            to="/"
+            className={({ isActive, isPending }) =>
+              isPending ? "pending" : isActive ? "active" : "nav-button"
+            }
           >
             AI커리어설계
-          </button>
-          <button 
-            className={`nav-button ${activeView === 'browse' ? 'active' : ''}`}
-            onClick={() => onViewChange('browse')}
+          </NavLink>
+          <NavLink
+            to="/browse"
+            className={({ isActive, isPending }) =>
+              isPending ? "pending" : isActive ? "active" : ""
+            }
           >
             둘러보기
-          </button>
-          <button 
-            className={`nav-button ${activeView === 'dashboard' ? 'active' : ''}`}
-            onClick={() => onViewChange('dashboard')}
+          </NavLink>
+          <NavLink
+            to="/dashboard"
+            className={({ isActive, isPending }) =>
+              isPending ? "pending" : isActive ? "active" : ""
+            }
           >
             대시보드
-          </button>
+          </NavLink>
         </nav>
 
         {/* 테마 토글 및 로그인/회원가입 버튼 */}
         <div className="header-right">
-          <button 
-            className="theme-toggle-header" 
+          <button
+            className="theme-toggle-header"
             title="테마 변경"
             onClick={toggleTheme}
           >
-            {theme === 'light' ? '🌙' : '☀️'}
+            {theme === "light" ? "🌙" : "☀️"}
           </button>
           <div className="header-auth">
             <button className="auth-button login">로그인</button>
@@ -61,6 +68,5 @@ const Header: React.FC<HeaderProps> = ({ activeView, onViewChange }) => {
     </header>
   );
 };
-
 
 export default Header;

@@ -1,7 +1,0 @@
-
-# YoYo AI version control directory
-.yoyo/
-
-# Analysis results files
-analysis_results.json
-analysis_results*.json
