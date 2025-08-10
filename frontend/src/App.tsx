@@ -6,7 +6,7 @@ import { useToast } from "./components/ui/ToastNotification";
 import PlanCard from "./components/ui/PlanCard";
 import AICareerCanvas from "./components/AICareerCanvas";
 import Browse from "./components/Browse";
-import { ThemeProvider } from "./contexts/ThemeContext";
+import { ThemeProvider } from "@/components/theme-provider";
 import { BrowserRouter, Route, Routes } from "react-router";
 
 // 메인 App 컴포넌트 (ThemeProvider 래핑)
@@ -58,10 +58,10 @@ function App() {
   }, [activeView, selectedPlan?.name, toast]);
 
   return (
-    <ThemeProvider>
+    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
       <BrowserRouter>
         <div className={`app`}>
-          <Header activeView={activeView} onViewChange={handleViewChange} />
+          <Header />
 
           {/* Main Content Area - 뷰에 따라 다른 콘텐츠 표시 */}
           <div

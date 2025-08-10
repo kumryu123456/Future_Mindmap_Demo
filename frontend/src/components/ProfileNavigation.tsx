@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { BrowseProfile } from '../types/career';
-import { useTheme } from '../contexts/ThemeContext';
-import './ProfileNavigation.css';
+import React, { useState, useEffect } from "react";
+import { BrowseProfile } from "../types/career";
+import { useTheme } from "@/components/theme-provider";
+import "./ProfileNavigation.css";
 
 interface ProfileNavigationProps {
   currentProfile: BrowseProfile;
@@ -14,7 +14,7 @@ const ProfileNavigation: React.FC<ProfileNavigationProps> = ({
   currentProfile,
   allProfiles,
   onProfileChange,
-  onClose
+  onClose,
 }) => {
   const { theme } = useTheme();
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -23,14 +23,14 @@ const ProfileNavigation: React.FC<ProfileNavigationProps> = ({
 
   // 현재 프로필의 인덱스 찾기
   useEffect(() => {
-    const index = allProfiles.findIndex(p => p.id === currentProfile.id);
+    const index = allProfiles.findIndex((p) => p.id === currentProfile.id);
     setCurrentIndex(index !== -1 ? index : 0);
   }, [currentProfile, allProfiles]);
 
   // 방문 기록 업데이트
   useEffect(() => {
-    setHistory(prev => {
-      const newHistory = prev.filter(id => id !== currentProfile.id);
+    setHistory((prev) => {
+      const newHistory = prev.filter((id) => id !== currentProfile.id);
       return [currentProfile.id, ...newHistory].slice(0, 10); // 최대 10개만 저장
     });
   }, [currentProfile.id]);
@@ -40,35 +40,41 @@ const ProfileNavigation: React.FC<ProfileNavigationProps> = ({
     const getSimilarProfiles = () => {
       const current = currentProfile;
       return allProfiles
-        .filter(profile => profile.id !== current.id)
-        .map(profile => ({
+        .filter((profile) => profile.id !== current.id)
+        .map((profile) => ({
           profile,
-          score: calculateSimilarity(current, profile)
+          score: calculateSimilarity(current, profile),
         }))
         .sort((a, b) => b.score - a.score)
         .slice(0, 6)
-        .map(item => item.profile);
+        .map((item) => item.profile);
     };
 
     setSuggestions(getSimilarProfiles());
   }, [currentProfile, allProfiles]);
 
   // 유사도 계산 함수
-  const calculateSimilarity = (profile1: BrowseProfile, profile2: BrowseProfile): number => {
+  const calculateSimilarity = (
+    profile1: BrowseProfile,
+    profile2: BrowseProfile,
+  ): number => {
     let score = 0;
 
     // 스킬 유사도 (50점)
     const skills1 = new Set(profile1.userProfile.skills);
     const skills2 = new Set(profile2.userProfile.skills);
-    const commonSkills = [...skills1].filter(skill => skills2.has(skill));
-    const skillSimilarity = commonSkills.length / Math.max(skills1.size, skills2.size);
+    const commonSkills = [...skills1].filter((skill) => skills2.has(skill));
+    const skillSimilarity =
+      commonSkills.length / Math.max(skills1.size, skills2.size);
     score += skillSimilarity * 50;
 
     // 역할 유사도 (30점)
     if (profile1.userProfile.currentRole === profile2.userProfile.currentRole) {
       score += 30;
-    } else if (profile1.userProfile.currentRole.includes('개발') && 
-               profile2.userProfile.currentRole.includes('개발')) {
+    } else if (
+      profile1.userProfile.currentRole.includes("개발") &&
+      profile2.userProfile.currentRole.includes("개발")
+    ) {
       score += 20;
     }
 
@@ -87,11 +93,13 @@ const ProfileNavigation: React.FC<ProfileNavigationProps> = ({
   };
 
   const getExperienceLevel = (experience: string): number => {
-    if (experience.includes('신입')) return 0;
-    if (experience.includes('1-3년') || experience.includes('1~3년')) return 1;
-    if (experience.includes('3-5년') || experience.includes('3~5년')) return 2;
-    if (experience.includes('5-10년') || experience.includes('5~10년')) return 3;
-    if (experience.includes('10년+') || experience.includes('10년 이상')) return 4;
+    if (experience.includes("신입")) return 0;
+    if (experience.includes("1-3년") || experience.includes("1~3년")) return 1;
+    if (experience.includes("3-5년") || experience.includes("3~5년")) return 2;
+    if (experience.includes("5-10년") || experience.includes("5~10년"))
+      return 3;
+    if (experience.includes("10년+") || experience.includes("10년 이상"))
+      return 4;
     return 2;
   };
 
@@ -114,7 +122,7 @@ const ProfileNavigation: React.FC<ProfileNavigationProps> = ({
   const getHistoryProfiles = () => {
     return history
       .slice(1) // 현재 프로필 제외
-      .map(id => allProfiles.find(p => p.id === id))
+      .map((id) => allProfiles.find((p) => p.id === id))
       .filter(Boolean) as BrowseProfile[];
   };
 
@@ -123,7 +131,7 @@ const ProfileNavigation: React.FC<ProfileNavigationProps> = ({
       {/* 상단 네비게이션 바 */}
       <div className="nav-bar">
         <div className="nav-controls">
-          <button 
+          <button
             className="nav-btn prev-btn"
             onClick={navigatePrevious}
             disabled={currentIndex === 0}
@@ -131,12 +139,12 @@ const ProfileNavigation: React.FC<ProfileNavigationProps> = ({
           >
             ◀
           </button>
-          
+
           <div className="nav-counter">
             {currentIndex + 1} / {allProfiles.length}
           </div>
-          
-          <button 
+
+          <button
             className="nav-btn next-btn"
             onClick={navigateNext}
             disabled={currentIndex === allProfiles.length - 1}
@@ -156,34 +164,36 @@ const ProfileNavigation: React.FC<ProfileNavigationProps> = ({
         {/* 방문 기록 */}
         {getHistoryProfiles().length > 0 && (
           <div className="nav-section">
-            <h4 className="nav-section-title">
-              🕒 최근 방문
-            </h4>
+            <h4 className="nav-section-title">🕒 최근 방문</h4>
             <div className="profile-list horizontal">
-              {getHistoryProfiles().slice(0, 4).map((profile) => (
-                <div
-                  key={profile.id}
-                  className="profile-item"
-                  onClick={() => navigateToProfile(profile)}
-                >
-                  <div className="profile-avatar">
-                    {profile.userProfile.avatar || '👤'}
+              {getHistoryProfiles()
+                .slice(0, 4)
+                .map((profile) => (
+                  <div
+                    key={profile.id}
+                    className="profile-item"
+                    onClick={() => navigateToProfile(profile)}
+                  >
+                    <div className="profile-avatar">
+                      {profile.userProfile.avatar || "👤"}
+                    </div>
+                    <div className="profile-info">
+                      <div className="profile-name">
+                        {profile.userProfile.displayName}
+                      </div>
+                      <div className="profile-role">
+                        {profile.userProfile.currentRole}
+                      </div>
+                    </div>
                   </div>
-                  <div className="profile-info">
-                    <div className="profile-name">{profile.userProfile.displayName}</div>
-                    <div className="profile-role">{profile.userProfile.currentRole}</div>
-                  </div>
-                </div>
-              ))}
+                ))}
             </div>
           </div>
         )}
 
         {/* 추천 프로필 */}
         <div className="nav-section">
-          <h4 className="nav-section-title">
-            ✨ 유사한 프로필
-          </h4>
+          <h4 className="nav-section-title">✨ 유사한 프로필</h4>
           <div className="profile-list">
             {suggestions.slice(0, 4).map((profile) => (
               <div
@@ -192,14 +202,20 @@ const ProfileNavigation: React.FC<ProfileNavigationProps> = ({
                 onClick={() => navigateToProfile(profile)}
               >
                 <div className="profile-avatar">
-                  {profile.userProfile.avatar || '👤'}
+                  {profile.userProfile.avatar || "👤"}
                 </div>
                 <div className="profile-info">
-                  <div className="profile-name">{profile.userProfile.displayName}</div>
-                  <div className="profile-role">{profile.userProfile.currentRole}</div>
+                  <div className="profile-name">
+                    {profile.userProfile.displayName}
+                  </div>
+                  <div className="profile-role">
+                    {profile.userProfile.currentRole}
+                  </div>
                   <div className="profile-skills">
-                    {profile.userProfile.skills.slice(0, 3).map(skill => (
-                      <span key={skill} className="skill-tag">{skill}</span>
+                    {profile.userProfile.skills.slice(0, 3).map((skill) => (
+                      <span key={skill} className="skill-tag">
+                        {skill}
+                      </span>
                     ))}
                   </div>
                 </div>

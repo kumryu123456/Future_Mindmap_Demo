@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useCallback } from 'react';
 // import { useUIState } from '../../hooks/useUIStore';
-import { useTheme } from '../../contexts/ThemeContext';
+import { useTheme } from '@/components/theme-provider';
 import type {
   PlanCardProps,
   PlanCardConfig,
