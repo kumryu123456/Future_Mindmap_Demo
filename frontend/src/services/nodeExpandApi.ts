@@ -498,13 +498,14 @@ export async function expandMemoryNode(
     const baseX = nodeData.position.x;
     const baseY = nodeData.position.y;
 
-    // Generate domain-specific suggestions based on node content
-    const suggestions = generateContextualSuggestions(nodeTitle, nodeContent, style, maxChildren);
+    // Generate personalized suggestions based on node content and context
+    const suggestions = generatePersonalizedSuggestions(nodeTitle, nodeContent, style, maxChildren);
 
     for (let i = 0; i < suggestions.length; i++) {
-      const angle = i * angleStep;
-      const x = baseX + radius * Math.cos(angle);
-      const y = baseY + radius * Math.sin(angle);
+      const angle = i * angleStep + (Math.random() - 0.5) * 0.3; // Add slight randomness
+      const radiusVariation = radius + (Math.random() - 0.5) * 40; // Vary radius
+      const x = baseX + radiusVariation * Math.cos(angle);
+      const y = baseY + radiusVariation * Math.sin(angle);
 
       childSuggestions.push({
         ...suggestions[i],
@@ -535,9 +536,9 @@ export async function expandMemoryNode(
 }
 
 /**
- * Generate contextual suggestions based on node content
+ * Generate personalized suggestions based on node content and context
  */
-function generateContextualSuggestions(
+function generatePersonalizedSuggestions(
   title: string,
   content: string,
   style: string,
@@ -608,30 +609,30 @@ function generateContextualSuggestions(
     // General career suggestions
     const generalSuggestions = {
       focused: [
-        { title: '핵심 역량 개발', content: '직무별 필수 스킬 습득', priority: 5, confidence: 0.85 },
-        { title: '실무 경험 쌓기', content: '인턴십과 프로젝트 참여', priority: 5, confidence: 0.82 },
-        { title: '취업 준비 전략', content: '이력서, 포트폴리오, 면접', priority: 4, confidence: 0.8 }
+        { title: `${title} 핵심 기술`, content: `${title} 역할에 필수적인 핵심 기술 습득`, priority: 5, confidence: 0.85 + Math.random() * 0.1 },
+        { title: `${title} 실무 준비`, content: `${title} 분야 실무 경험과 전문 지식`, priority: 5, confidence: 0.82 + Math.random() * 0.1 },
+        { title: `${title} 취업 전략`, content: `${title} 직무 취업을 위한 전략과 준비`, priority: 4, confidence: 0.8 + Math.random() * 0.1 }
       ],
       creative: [
-        { title: '새로운 직무 탐색', content: '융합 직무와 신생 직업', priority: 3, confidence: 0.7 },
-        { title: '부업/프리랜서', content: '추가 수입원 창출 방법', priority: 3, confidence: 0.68 },
-        { title: '해외 진출', content: '글로벌 커리어 기회', priority: 3, confidence: 0.65 },
-        { title: '창업/스타트업', content: '비즈니스 아이디어 실현', priority: 3, confidence: 0.62 },
-        { title: '퍼스널 브랜딩', content: 'SNS와 콘텐츠 활용', priority: 3, confidence: 0.7 }
+        { title: `${title} 신영역`, content: `${title}에서 파생되는 새로운 기회와 영역`, priority: 3 + Math.floor(Math.random() * 2), confidence: 0.7 + Math.random() * 0.1 },
+        { title: `${title} 부업`, content: `${title} 스킬을 활용한 부업과 추가 수입`, priority: 3, confidence: 0.68 + Math.random() * 0.1 },
+        { title: `${title} 글로벌`, content: `${title} 분야의 해외 진출과 글로벌 기회`, priority: 3, confidence: 0.65 + Math.random() * 0.1 },
+        { title: `${title} 창업`, content: `${title} 전문성을 기반으로 한 창업 아이디어`, priority: 3, confidence: 0.62 + Math.random() * 0.1 },
+        { title: `${title} 브랜딩`, content: `${title} 전문가로서의 개인 브랜드 구축`, priority: 3, confidence: 0.7 + Math.random() * 0.1 }
       ],
       analytical: [
-        { title: '시장 동향 분석', content: '산업별 성장률과 전망', priority: 4, confidence: 0.78 },
-        { title: '경쟁력 진단', content: '현재 역량과 시장 요구 비교', priority: 4, confidence: 0.75 },
-        { title: '연봉 협상 전략', content: '시장 가치와 협상 기법', priority: 3, confidence: 0.72 },
-        { title: '성장 지표 관리', content: 'KPI 설정과 추적', priority: 3, confidence: 0.7 }
+        { title: `${title} 시장 분석`, content: `${title} 분야의 시장 동향과 성장 기회`, priority: 4, confidence: 0.78 + Math.random() * 0.1 },
+        { title: `${title} 역량 평가`, content: `${title} 담당자로서의 역량 진단과 개발 계획`, priority: 4, confidence: 0.75 + Math.random() * 0.1 },
+        { title: `${title} 커리어 전략`, content: `${title} 분야에서의 연봉 또는 커리어 성장 전략`, priority: 3 + Math.floor(Math.random() * 2), confidence: 0.72 + Math.random() * 0.1 },
+        { title: `${title} 성과 측정`, content: `${title} 역할에서의 성과 측정과 KPI 관리`, priority: 3, confidence: 0.7 + Math.random() * 0.1 }
       ],
       comprehensive: [
-        { title: '전문 지식', content: '직무 관련 핵심 지식 습득', priority: 5, confidence: 0.85 },
-        { title: '실무 경험', content: '프로젝트와 인턴십', priority: 5, confidence: 0.82 },
-        { title: '자격증/학위', content: '공인 자격과 교육 이수', priority: 3, confidence: 0.75 },
-        { title: '네트워킹', content: '업계 인맥 구축', priority: 3, confidence: 0.7 },
-        { title: '소프트 스킬', content: '리더십과 커뮤니케이션', priority: 4, confidence: 0.78 },
-        { title: '워라밸', content: '일과 삶의 균형 전략', priority: 3, confidence: 0.72 }
+        { title: `${title} 전문성 강화`, content: `${title} 분야의 전문 지식과 역량 개발`, priority: 5, confidence: 0.85 },
+        { title: `${title} 실무 프로젝트`, content: `${title} 영역의 실전 프로젝트 경험`, priority: 5, confidence: 0.82 },
+        { title: `${title} 역량 인증`, content: `${title} 관련 자격증과 포트폴리오`, priority: Math.floor(Math.random() * 2) + 3, confidence: 0.75 + Math.random() * 0.1 },
+        { title: `${title} 커뮤니티`, content: `${title} 전문가 네트워크 및 업계 관계`, priority: Math.floor(Math.random() * 2) + 3, confidence: 0.7 + Math.random() * 0.1 },
+        { title: `${title} 리더십`, content: `${title} 팀 관리와 리더십 스킬`, priority: 4, confidence: 0.78 + Math.random() * 0.1 },
+        { title: `${title} 트렌드`, content: `${title} 최신 트렌드와 미래 전망`, priority: 3 + Math.floor(Math.random() * 2), confidence: 0.72 + Math.random() * 0.1 }
       ]
     };
     

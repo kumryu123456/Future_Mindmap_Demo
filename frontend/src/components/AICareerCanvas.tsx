@@ -1648,17 +1648,29 @@ const AICareerCanvasInner: React.FC = () => {
       return;
     }
 
-    toast.info(`"${targetNode.data.label}" 노드를 AI로 확장 중...`, { duration: 3000 });
+    // 다양한 확장 스타일 중 랜덤 선택
+    const expansionStyles: Array<'comprehensive' | 'focused' | 'creative' | 'analytical'> = ['comprehensive', 'focused', 'creative', 'analytical'];
+    const randomStyle = expansionStyles[Math.floor(Math.random() * expansionStyles.length)];
+    
+    const styleNames = {
+      comprehensive: '종합적',
+      focused: '집중적',
+      creative: '창의적',
+      analytical: '분석적'
+    };
+    
+    toast.info(`"${targetNode.data.label}" 노드를 ${styleNames[randomStyle]} 스타일로 AI 확장 중...`, { duration: 3000 });
 
     try {
       console.log('🚀 AI Expand 시작:', {
         nodeId,
         nodeTitle: targetNode.data.label,
-        nodeContent: targetNode.data.content || targetNode.data.subtitle
+        nodeContent: targetNode.data.content || targetNode.data.subtitle,
+        style: randomStyle
       });
 
       // Try database node expansion first, fallback to memory expansion
-      let result = await quickExpandNode(nodeId, 'comprehensive');
+      let result = await quickExpandNode(nodeId, randomStyle);
 
       // If database expansion fails (node not found), use memory expansion
       if (!result.success && result.error?.code === '404') {
@@ -1669,7 +1681,7 @@ const AICareerCanvasInner: React.FC = () => {
             data: targetNode.data,
             position: targetNode.position
           },
-          'comprehensive'
+          randomStyle
         );
       }
 
