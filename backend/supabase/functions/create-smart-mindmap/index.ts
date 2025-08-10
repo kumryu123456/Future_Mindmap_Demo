@@ -67,8 +67,35 @@ serve(async (req: Request) => {
     const startTime = Date.now()
     const supabase = getSupabaseClient()
 
-    // Parse request body
-    const { input, options = {} }: SmartMindmapRequest = await req.json()
+    // Parse request body with enhanced UTF-8 handling
+    let requestData: SmartMindmapRequest
+    try {
+      // Enhanced UTF-8 JSON parsing for Korean text
+      let textBody: string
+      
+      try {
+        // Primary: UTF-8 with error handling
+        const textDecoder = new TextDecoder('utf-8', { fatal: true })
+        const rawBody = await req.arrayBuffer()
+        textBody = textDecoder.decode(rawBody)
+      } catch (decodeError) {
+        console.warn('UTF-8 decoding failed, trying fallback:', decodeError)
+        // Fallback: Try without fatal flag
+        const textDecoder = new TextDecoder('utf-8', { fatal: false })
+        const rawBody = await req.arrayBuffer()
+        textBody = textDecoder.decode(rawBody)
+      }
+      
+      console.log('📥 Smart Mindmap received text body:', textBody)
+      requestData = JSON.parse(textBody)
+    } catch (parseError) {
+      return Response.json(
+        { success: false, error: 'Invalid JSON in request body' },
+        { status: 400, headers: corsHeaders }
+      )
+    }
+
+    const { input, options = {} } = requestData
 
     if (!input || input.trim() === '') {
       return Response.json(
@@ -92,7 +119,7 @@ serve(async (req: Request) => {
     const parseResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/parse-input`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json; charset=utf-8',
         'Authorization': req.headers.get('Authorization') || ''
       },
       body: JSON.stringify({
@@ -119,7 +146,7 @@ serve(async (req: Request) => {
       const enterpriseResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/fetch-enterprise-data`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json; charset=utf-8',
           'Authorization': req.headers.get('Authorization') || ''
         },
         body: JSON.stringify({

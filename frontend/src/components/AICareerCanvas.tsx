@@ -23,6 +23,7 @@ import { CareerNode as CareerNodeType } from '../types/career';
 import { createSmartMindmapSimple, convertToXYFlowNodes, convertToXYFlowEdges } from '../services/smartMindmapApi';
 import { autoExpand } from '../services/autoExpandApi';
 import { ragDetail } from '../services/ragDetailApi';
+import { quickExpandNode } from '../services/nodeExpandApi';
 import './AICareerCanvas.css';
 
 // Theme Context
@@ -137,6 +138,41 @@ const CenterNode = ({ data, selected, id }: { data: any; selected: boolean; id: 
 const MajorNode = ({ data, id }: { data: any; id: string }) => {
   const { theme } = useTheme();
   const { isConnectMode } = React.useContext(NodeContext);
+  const toast = useToast();
+  const [isExpanding, setIsExpanding] = useState(false);
+  
+  const handleExpandNode = async (style: 'comprehensive' | 'focused' | 'creative' | 'analytical') => {
+    if (isExpanding) return;
+    
+    setIsExpanding(true);
+    toast.show('노드 확장 중...', 'info');
+    
+    try {
+      const result = await quickExpandNode(id, style);
+      
+      if (result.success && result.nodes && result.edges) {
+        // 상위 컴포넌트에서 노드/엣지를 추가할 수 있도록 이벤트 발생
+        const expandEvent = new CustomEvent('node-expand', {
+          detail: {
+            nodeId: id,
+            newNodes: result.nodes,
+            newEdges: result.edges,
+            style: style
+          }
+        });
+        window.dispatchEvent(expandEvent);
+        
+        toast.show(`${result.nodes.length}개의 하위 노드가 생성되었습니다!`, 'success');
+      } else {
+        throw new Error(result.error?.message || '노드 확장에 실패했습니다');
+      }
+    } catch (error) {
+      console.error('Node expansion error:', error);
+      toast.show('노드 확장 중 오류가 발생했습니다.', 'error');
+    } finally {
+      setIsExpanding(false);
+    }
+  };
   
   return (
     <div className={`career-node major-node ${theme}`}>
@@ -153,7 +189,106 @@ const MajorNode = ({ data, id }: { data: any; id: string }) => {
       <div className="node-content">
         <div className="node-title">{data.label}</div>
         <div className="node-level">{data.subtitle || '주요 영역'}</div>
+        
+        {/* AI 확장 버튼들 */}
+        <div className="expand-buttons" style={{ 
+          position: 'absolute', 
+          top: '-30px', 
+          right: '-10px', 
+          display: 'flex', 
+          gap: '4px',
+          opacity: 0,
+          transition: 'opacity 0.2s ease'
+        }}>
+          <button 
+            className="expand-btn comprehensive"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleExpandNode('comprehensive');
+            }}
+            disabled={isExpanding}
+            title="종합적 확장"
+            style={{
+              width: '24px',
+              height: '24px',
+              borderRadius: '50%',
+              border: 'none',
+              backgroundColor: '#3b82f6',
+              color: 'white',
+              fontSize: '12px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            🎯
+          </button>
+          <button 
+            className="expand-btn creative"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleExpandNode('creative');
+            }}
+            disabled={isExpanding}
+            title="창의적 확장"
+            style={{
+              width: '24px',
+              height: '24px',
+              borderRadius: '50%',
+              border: 'none',
+              backgroundColor: '#10b981',
+              color: 'white',
+              fontSize: '12px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            💡
+          </button>
+          <button 
+            className="expand-btn focused"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleExpandNode('focused');
+            }}
+            disabled={isExpanding}
+            title="집중적 확장"
+            style={{
+              width: '24px',
+              height: '24px',
+              borderRadius: '50%',
+              border: 'none',
+              backgroundColor: '#f59e0b',
+              color: 'white',
+              fontSize: '12px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            🔍
+          </button>
+        </div>
       </div>
+      
+      <style jsx>{`
+        .career-node:hover .expand-buttons {
+          opacity: 1 !important;
+        }
+        .expand-btn:hover {
+          transform: scale(1.1);
+          transition: transform 0.1s ease;
+        }
+        .expand-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+          transform: none;
+        }
+      `}</style>
     </div>
   );
 };
@@ -206,12 +341,57 @@ const GoalNode = ({ data, id }: { data: any; id: string }) => {
   );
 };
 
+const ExpandedNode = ({ data, id }: { data: any; id: string }) => {
+  const { theme } = useTheme();
+  const { isConnectMode } = React.useContext(NodeContext);
+  
+  return (
+    <div className={`career-node expanded-node ${theme}`} title={data.reasoning}>
+      {/* 연결 핸들 (클릭으로 노드 생성) */}
+      <DragHandle type="source" position={Position.Top} id="source-top" />
+      <DragHandle type="source" position={Position.Right} id="source-right" />
+      <DragHandle type="source" position={Position.Bottom} id="source-bottom" />
+      <DragHandle type="source" position={Position.Left} id="source-left" />
+      <DragHandle type="target" position={Position.Top} id="target-top" />
+      <DragHandle type="target" position={Position.Right} id="target-right" />
+      <DragHandle type="target" position={Position.Bottom} id="target-bottom" />
+      <DragHandle type="target" position={Position.Left} id="target-left" />
+      
+      <div className="node-content">
+        <div className="node-title">{data.label}</div>
+        <div className="node-level">{data.content}</div>
+        {data.confidence && (
+          <div className="confidence-indicator" style={{
+            fontSize: '10px',
+            color: data.confidence > 0.8 ? '#10b981' : data.confidence > 0.6 ? '#f59e0b' : '#6b7280',
+            marginTop: '4px'
+          }}>
+            신뢰도: {Math.round(data.confidence * 100)}%
+          </div>
+        )}
+        {data.priority && (
+          <div className="priority-indicator" style={{
+            position: 'absolute',
+            top: '4px',
+            right: '4px',
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            backgroundColor: data.priority >= 4 ? '#ef4444' : data.priority >= 3 ? '#f59e0b' : '#6b7280'
+          }} />
+        )}
+      </div>
+    </div>
+  );
+};
+
 // Node Types Registry
 const nodeTypes: NodeTypes = {
   centerNode: CenterNode,
   majorNode: MajorNode,
   detailNode: DetailNode,
   goalNode: GoalNode,
+  expandedNode: ExpandedNode,
 };
 
 // Convert CareerMap to React Flow format
@@ -739,10 +919,6 @@ const NodeEditModal: React.FC<{
 };
 
 const AICareerCanvasInner: React.FC = () => {
-  // Add invisible handle styles on component mount
-  useEffect(() => {
-    addInvisibleHandleStyles();
-  }, []);
   const [nodes, setNodes, onNodesChange] = useNodesState([
     {
       id: '1',
@@ -774,6 +950,34 @@ const AICareerCanvasInner: React.FC = () => {
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
   const [isEdgeEditMode, setIsEdgeEditMode] = useState(false);
   const toast = useToast();
+  
+  // Add invisible handle styles on component mount
+  useEffect(() => {
+    addInvisibleHandleStyles();
+  }, []);
+  
+  // Handle node expansion events
+  useEffect(() => {
+    const handleNodeExpand = (event: CustomEvent) => {
+      const { nodeId, newNodes, newEdges, style } = event.detail;
+      
+      console.log('Handling node expansion:', { nodeId, newNodesCount: newNodes.length, style });
+      
+      // Add new nodes and edges to the canvas
+      setNodes(prevNodes => [...prevNodes, ...newNodes]);
+      setEdges(prevEdges => [...prevEdges, ...newEdges]);
+      
+      toast.show(`${style} 스타일로 ${newNodes.length}개 노드가 확장되었습니다!`, 'success');
+    };
+    
+    // Add event listener
+    window.addEventListener('node-expand', handleNodeExpand as EventListener);
+    
+    // Cleanup
+    return () => {
+      window.removeEventListener('node-expand', handleNodeExpand as EventListener);
+    };
+  }, [setNodes, setEdges, toast]);
   
   // 두 노드 간 최적 연결 방향 계산
   const calculateOptimalConnection = useCallback((sourceNode: any, targetNode: any) => {
@@ -1419,68 +1623,21 @@ const AICareerCanvasInner: React.FC = () => {
         nodeContent: targetNode.data.content || targetNode.data.subtitle
       });
 
-      // Call auto-expand API
-      const response = await autoExpand({
-        context: `${targetNode.data.label}: ${targetNode.data.content || targetNode.data.subtitle || ''}`,
-        parentNodeId: nodeId,
-        expandDirection: 'children', // 자식 노드 확장
-        maxNodes: 5 // 최대 5개 노드
-      });
+      // Use the new quickExpandNode API
+      const result = await quickExpandNode(nodeId, 'comprehensive');
 
-      if (!response.success || !response.data) {
-        throw new Error(response.error?.message || 'Failed to expand node');
+      if (!result.success || !result.nodes || !result.edges) {
+        throw new Error(result.error?.message || 'Failed to expand node');
       }
 
-      console.log('✅ AI Expand API 응답:', response.data);
-
-      // Generate new child nodes around the parent
-      const parentPosition = targetNode.position;
-      const childDistance = 180;
-      const angleStep = (2 * Math.PI) / Math.min(response.data.expandedNodes.length, 6);
-      
-      const newNodes: Node[] = [];
-      const newEdges: Edge[] = [];
-
-      response.data.expandedNodes.forEach((expandedNode: any, index: number) => {
-        const angle = index * angleStep;
-        const childNodeId = `expanded-${Date.now()}-${index}`;
-        
-        // Calculate child position
-        const childPosition = {
-          x: parentPosition.x + Math.cos(angle) * childDistance,
-          y: parentPosition.y + Math.sin(angle) * childDistance
-        };
-
-        // Create child node
-        const childNode: Node = {
-          id: childNodeId,
-          type: 'detailNode',
-          position: childPosition,
-          data: {
-            label: expandedNode.title || `확장 노드 ${index + 1}`,
-            content: expandedNode.content || expandedNode.description || '',
-            subtitle: '확장된 단계',
-            metadata: {
-              source: 'ai-expand',
-              parentNodeId: nodeId,
-              confidence: expandedNode.confidence || 0.8
-            }
-          },
-        };
-
-        newNodes.push(childNode);
-
-        // Create edge from parent to child
-        const edge = createConsistentEdge(
-          nodeId,
-          childNodeId,
-          'context_add'
-        );
-
-        if (edge) {
-          newEdges.push(edge);
-        }
+      console.log('✅ AI Expand API 응답:', { 
+        nodes: result.nodes.length, 
+        edges: result.edges.length 
       });
+
+      // Add the new nodes and edges directly from the API response
+      const newNodes = result.nodes;
+      const newEdges = result.edges;
 
       // Add nodes and edges to the graph
       setNodes(prevNodes => [...prevNodes, ...newNodes]);

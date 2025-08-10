@@ -10,8 +10,8 @@ const DEFAULT_CONFIG: Required<ApiConfig> = {
   baseUrl: import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:54321',
   timeout: parseInt(import.meta.env.VITE_API_TIMEOUT || '10000'),
   headers: {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
+    'Content-Type': 'application/json; charset=utf-8',
+    'Accept': 'application/json; charset=utf-8',
     'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0'}`,
   },
 };

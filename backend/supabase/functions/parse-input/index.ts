@@ -400,10 +400,27 @@ serve(async (req) => {
           return rateLimitResult.response!
         }
 
-        // 🔧 FIX: Add JSON parsing error handling with proper 400 vs 500 response
+        // 🔧 FIX: Enhanced UTF-8 JSON parsing with Korean text support
         let body
         try {
-          body = await req.json()
+          // Multiple encoding fallback strategy
+          let textBody: string
+          
+          try {
+            // Primary: UTF-8 with error handling
+            const textDecoder = new TextDecoder('utf-8', { fatal: true })
+            const rawBody = await req.arrayBuffer()
+            textBody = textDecoder.decode(rawBody)
+          } catch (decodeError) {
+            console.warn('UTF-8 decoding failed, trying fallback:', decodeError)
+            // Fallback: Try without fatal flag
+            const textDecoder = new TextDecoder('utf-8', { fatal: false })
+            const rawBody = await req.arrayBuffer()  
+            textBody = textDecoder.decode(rawBody)
+          }
+          
+          console.log('📥 Received text body:', textBody)
+          body = JSON.parse(textBody)
         } catch (parseError) {
           const origin = req.headers.get('Origin')
           const corsHeaders = getCorsHeaders(origin)
@@ -414,7 +431,7 @@ serve(async (req) => {
             }),
             { 
               status: 400,
-              headers: { ...corsHeaders, "Content-Type": "application/json" }
+              headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" }
             }
           )
         }
@@ -431,7 +448,7 @@ serve(async (req) => {
             }),
             { 
               status: 400,
-              headers: { ...corsHeaders, "Content-Type": "application/json" }
+              headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" }
             }
           )
         }
@@ -447,7 +464,7 @@ serve(async (req) => {
             }),
             { 
               status: 400,
-              headers: { ...corsHeaders, "Content-Type": "application/json" }
+              headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" }
             }
           )
         }
@@ -463,7 +480,7 @@ serve(async (req) => {
             }),
             { 
               status: 400,
-              headers: { ...corsHeaders, "Content-Type": "application/json" }
+              headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" }
             }
           )
         }
@@ -522,16 +539,23 @@ serve(async (req) => {
 
         const origin = req.headers.get('Origin')
         const corsHeaders = getCorsHeaders(origin)
+        
+        // Ensure UTF-8 encoding in response
+        const responseData = JSON.stringify({ 
+          data: savedInput,
+          keywords,
+          success: true,
+          message: `Text processed successfully with ${keywords.language} analysis. Found ${keywords.nouns.length} nouns, ${keywords.topics.length} topics.`
+        })
+        
         const finalResponse = new Response(
-          JSON.stringify({ 
-            data: savedInput,
-            keywords,
-            success: true,
-            message: `Text processed successfully with ${keywords.language} analysis. Found ${keywords.nouns.length} nouns, ${keywords.topics.length} topics.`
-          }),
+          responseData,
           { 
             status: 201,
-            headers: { ...corsHeaders, "Content-Type": "application/json" }
+            headers: { 
+              ...corsHeaders, 
+              "Content-Type": "application/json; charset=utf-8"
+            }
           }
         )
         
@@ -565,7 +589,7 @@ serve(async (req) => {
             count: data.length,
             success: true 
           }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } }
         )
       }
 
@@ -578,7 +602,7 @@ serve(async (req) => {
         }),
         { 
           status: 405,
-          headers: { ...corsHeaders, "Content-Type": "application/json" }
+          headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" }
         }
       )
 
@@ -603,7 +627,7 @@ serve(async (req) => {
         }),
         { 
           status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" }
+          headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" }
         }
       )
     }

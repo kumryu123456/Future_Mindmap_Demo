@@ -9,7 +9,7 @@ export interface OpenAIConfig {
 }
 
 // 환경변수에서 OpenAI API 키 가져오기 또는 하드코딩된 키 사용
-const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY') || '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';
+const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY') || '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';
 
 if (!OPENAI_API_KEY || OPENAI_API_KEY === 'your_openai_key_here') {
   console.error('⚠️ OPENAI_API_KEY not configured properly');
@@ -95,7 +95,7 @@ export class OpenAIClient {
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json; charset=utf-8',
           'Authorization': `Bearer ${config.apiKey}`
         },
         body: JSON.stringify(requestBody)
@@ -149,10 +149,15 @@ export class OpenAIClient {
 
     const systemPrompt = `You are an expert mindmap generator that creates structured, hierarchical mindmaps.
 
+IMPORTANT LANGUAGE REQUIREMENT:
+- If language is 'korean', ALL text must be written in proper Korean (한국어)
+- Use Korean characters (한글) only, no broken or corrupted text
+- Ensure UTF-8 encoding is maintained throughout
+
 REQUIREMENTS:
 1. Generate exactly ${opts.maxNodes} nodes maximum
 2. Create a hierarchical structure with 1 center node, 2-4 major nodes, and supporting minor nodes
-3. Use ${opts.language === 'korean' ? 'Korean' : 'English'} language
+3. Use ${opts.language === 'korean' ? 'KOREAN LANGUAGE (한국어) ONLY' : 'English language'} 
 4. Include metadata with source information and confidence scores
 5. Position nodes in a logical hierarchy
 

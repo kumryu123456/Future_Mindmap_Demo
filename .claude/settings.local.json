@@ -15,7 +15,12 @@
       "Bash(supabase secrets:*)",
       "Bash(supabase login:*)",
       "Bash(supabase stop:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(git reset:*)",
+      "Bash(git add:*)",
+      "Bash(git rm:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)"
     ],
     "deny": []
   }
