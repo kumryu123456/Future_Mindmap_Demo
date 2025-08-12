@@ -3,7 +3,7 @@
  */
 
 export interface MetricData {
-  [key: string]: any
+  [key: string]: unknown
 }
 
 export interface PerformanceMetric {

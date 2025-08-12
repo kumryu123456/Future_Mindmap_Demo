@@ -2,32 +2,68 @@
  * Direct database connection utility for Supabase Edge Functions
  */
 
+// Type guard to safely check for Deno environment
+function isDeno(): boolean {
+  return typeof globalThis !== 'undefined' && 
+         'Deno' in globalThis && 
+         globalThis.Deno !== undefined
+}
+
+// Safe Deno environment access
+function getEnv(key: string): string | undefined {
+  if (isDeno()) {
+    return (globalThis as any).Deno.env.get(key)
+  }
+  // Fallback to process.env in Node.js environments
+  return typeof process !== 'undefined' ? process.env[key] : undefined
+}
+
 export interface DirectDBConfig {
   connectionString?: string
 }
 
-export interface QueryResult {
-  success: boolean
-  data?: any[]
-  error?: string
-  rowCount?: number
-}
+export type QueryResult<T = unknown> = 
+  | { success: true; data?: T[]; rowCount?: number }
+  | { success: false; error: string }
 
 // Note: This is a placeholder implementation
 // In a real-world scenario, you'd use a proper PostgreSQL client
 export class DirectDB {
-  private connectionString: string
+  private readonly connectionString: string
 
   constructor(config: DirectDBConfig = {}) {
-    this.connectionString = config.connectionString || 
-      Deno.env.get('DATABASE_URL') || 
-      'postgresql://postgres:postgres@127.0.0.1:54322/postgres'
+    if (config.connectionString) {
+      this.connectionString = config.connectionString
+    } else {
+      const dbUrl = getEnv('DATABASE_URL')
+      if (dbUrl) {
+        this.connectionString = dbUrl
+      } else {
+        // Check if we're in development mode
+        const nodeEnv = getEnv('NODE_ENV')
+        const denoEnv = getEnv('DENO_ENV')
+        
+        if (nodeEnv === 'development' || denoEnv === 'development') {
+          console.warn('🔧 Using local development database connection')
+          this.connectionString = 'postgresql://postgres:postgres@127.0.0.1:54322/postgres'
+        } else {
+          console.error('❌ DATABASE_URL environment variable is missing')
+          throw new Error(
+            'DATABASE_URL environment variable is required for production/edge environments. ' +
+            'Please set DATABASE_URL in your environment variables or provide config.connectionString. ' +
+            'Example: DATABASE_URL=postgresql://user:pass@host:port/dbname'
+          )
+        }
+      }
+    }
   }
 
-  async query(sql: string, params: any[] = []): Promise<QueryResult> {
+  async query<T = unknown>(sql: string, params: ReadonlyArray<unknown> = []): Promise<QueryResult<T>> {
     try {
       // This is a placeholder - in production you'd use a proper DB client
-      console.warn('DirectDB: Using placeholder implementation. SQL:', sql, 'Params:', params)
+      const sqlPreview = sql.length > 100 ? `${sql.substring(0, 100)}...` : sql
+      const paramsInfo = `${params.length} params of types: [${params.map(p => typeof p).join(', ')}]`
+      console.debug('DirectDB: Using placeholder implementation. SQL preview:', sqlPreview, paramsInfo)
       
       return {
         success: true,
@@ -49,8 +85,10 @@ export class DirectDB {
   }
 
   async close(): Promise<void> {
-    // Placeholder close implementation
-    console.warn('DirectDB: Using placeholder close implementation')
+    // TODO: Implement actual resource cleanup (connection pooling, prepared statements, etc.)
+    // Currently a no-op placeholder
+    console.debug('DirectDB: close() called - placeholder implementation')
+    return Promise.resolve()
   }
 }
 

@@ -11,7 +11,7 @@ export interface ValidationResult {
 /**
  * Validate keywords array
  */
-export function validateKeywords(keywords: any): ValidationResult {
+export function validateKeywords(keywords: unknown): ValidationResult {
   const result: ValidationResult = {
     isValid: true,
     errors: [],
@@ -136,7 +136,7 @@ export function isCacheValid(cachedUntil: string): boolean {
 /**
  * Parse and validate enterprise data response
  */
-export function validateEnterpriseDataResponse(data: any): ValidationResult {
+export function validateEnterpriseDataResponse(data: unknown): ValidationResult {
   const result: ValidationResult = {
     isValid: true,
     errors: [],

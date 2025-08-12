@@ -1,16 +1,16 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+// @ts-expect-error Deno std library types not available in current TypeScript config
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { getCorsHeaders } from "../_shared/cors.js"
 import { getSupabaseClient } from "../_shared/supabase.js"
 
 console.log("Fetch Enterprise Data Function initialized!")
 
-interface EnterpriseDataSource {
-  name: string
-  url: string
-  apiKey?: string
-  headers?: Record<string, string>
-  transformer: (data: any) => NormalizedData[]
+// Helper function to extract origin from request headers
+function getRequestOrigin(req: Request): string | undefined {
+  return req.headers.get('origin') ?? undefined
 }
+
+// Removed unused interface EnterpriseDataSource
 
 interface NormalizedData {
   id: string
@@ -20,7 +20,7 @@ interface NormalizedData {
   source: string
   relevance_score: number
   keywords: string[]
-  metadata: Record<string, any>
+  metadata: Record<string, unknown>
   url?: string
   created_at: string
 }
@@ -38,6 +38,11 @@ interface EnterpriseDataRecord {
 }
 
 /**
+ * Fixed timestamp for deterministic mock data
+ */
+const FIXED_TIMESTAMP = '2024-01-01T00:00:00.000Z'
+
+/**
  * Mock enterprise data sources (replace with real APIs)
  */
 const mockEnterpriseData: Record<string, NormalizedData[]> = {
@@ -52,7 +57,7 @@ const mockEnterpriseData: Record<string, NormalizedData[]> = {
       keywords: ["agile", "project management", "methodology", "productivity"],
       metadata: { department: "PMO", last_updated: "2024-01-01" },
       url: "/wiki/agile-best-practices",
-      created_at: new Date().toISOString()
+      created_at: FIXED_TIMESTAMP
     },
     {
       id: "prod_002", 
@@ -64,7 +69,7 @@ const mockEnterpriseData: Record<string, NormalizedData[]> = {
       keywords: ["automation", "tools", "productivity", "efficiency"],
       metadata: { department: "IT", approval_status: "approved" },
       url: "/kb/automation-tools",
-      created_at: new Date().toISOString()
+      created_at: FIXED_TIMESTAMP
     }
   ],
   "mobile": [
@@ -78,7 +83,7 @@ const mockEnterpriseData: Record<string, NormalizedData[]> = {
       keywords: ["mobile", "app", "development", "standards"],
       metadata: { version: "2.1", compliance: "required" },
       url: "/standards/mobile-dev",
-      created_at: new Date().toISOString()
+      created_at: FIXED_TIMESTAMP
     }
   ],
   "ai": [
@@ -92,7 +97,7 @@ const mockEnterpriseData: Record<string, NormalizedData[]> = {
       keywords: ["ai", "artificial intelligence", "implementation", "strategy"],
       metadata: { status: "active", priority: "high" },
       url: "/strategy/ai-framework",
-      created_at: new Date().toISOString()
+      created_at: FIXED_TIMESTAMP
     }
   ]
 }
@@ -134,7 +139,7 @@ async function fetchFromExternalAPI(source: string, keywords: string[]): Promise
   const allData: NormalizedData[] = []
   
   // Search through mock data for relevant entries
-  for (const [category, items] of Object.entries(mockEnterpriseData)) {
+  for (const [, items] of Object.entries(mockEnterpriseData)) {
     for (const item of items) {
       const relevanceScore = calculateRelevanceScore(item.keywords, keywords)
       if (relevanceScore > 0.3) { // Threshold for relevance
@@ -153,24 +158,27 @@ async function fetchFromExternalAPI(source: string, keywords: string[]): Promise
 /**
  * Normalize and merge data from multiple sources
  */
-function normalizeEnterpriseData(rawData: any[], source: string): NormalizedData[] {
-  return rawData.map((item, index) => ({
-    id: item.id || `${source}_${index}`,
-    title: item.title || item.name || 'Untitled',
-    description: item.description || item.summary || item.content || '',
-    category: item.category || item.type || 'general',
-    source,
-    relevance_score: item.relevance_score || 0.5,
-    keywords: item.keywords || item.tags || [],
-    metadata: item.metadata || item.properties || {},
-    url: item.url || item.link,
-    created_at: item.created_at || new Date().toISOString()
-  }))
+function normalizeEnterpriseData(rawData: unknown[], source: string): NormalizedData[] {
+  return rawData.map((item, index) => {
+    const typedItem = item as Record<string, unknown>
+    return {
+      id: (typedItem.id as string) || `${source}_${index}`,
+      title: (typedItem.title as string) || (typedItem.name as string) || 'Untitled',
+      description: (typedItem.description as string) || (typedItem.summary as string) || (typedItem.content as string) || '',
+      category: (typedItem.category as string) || (typedItem.type as string) || 'general',
+      source,
+      relevance_score: (typedItem.relevance_score as number) || 0.5,
+      keywords: (typedItem.keywords as string[]) || (typedItem.tags as string[]) || [],
+      metadata: (typedItem.metadata as Record<string, unknown>) || (typedItem.properties as Record<string, unknown>) || {},
+      url: (typedItem.url as string) || (typedItem.link as string),
+      created_at: (typedItem.created_at as string) || new Date().toISOString()
+    }
+  })
 }
 
-serve(async (req) => {
+serve(async (req: Request): Promise<Response> => {
   const { method } = req
-  const corsHeaders = getCorsHeaders(req.headers.get('origin'))
+  const corsHeaders = getCorsHeaders(getRequestOrigin(req))
 
   // Handle CORS preflight requests
   if (method === 'OPTIONS') {
@@ -359,9 +367,10 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Function error:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Internal server error'
     return new Response(
       JSON.stringify({ 
-        error: error.message || 'Internal server error',
+        error: errorMessage,
         success: false 
       }),
       { 

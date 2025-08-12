@@ -7,6 +7,38 @@ export interface MockAIOptions {
   includeMetadata?: boolean;
 }
 
+interface TemplateItem {
+  title: string;
+  content: string;
+}
+
+type TemplateMap = Record<string, { korean: TemplateItem[]; english: TemplateItem[] }>;
+
+interface NodeMetadata {
+  source: string;
+  confidence: number;
+  keywords?: string[];
+}
+
+interface MindmapNode {
+  id: string;
+  title: string;
+  content: string;
+  x: number;
+  y: number;
+  type: string;
+  parentId?: string;
+  level: number;
+  metadata: NodeMetadata;
+}
+
+interface Connection {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  type: string;
+}
+
 /**
  * 스마트한 Mock AI 마인드맵 생성기
  * OpenAI가 사용 불가능할 때 고품질 마인드맵을 생성
@@ -18,10 +50,10 @@ export class MockAIGenerator {
    */
   async generateMindmapContent(
     userInput: string,
-    parsedData?: any,
-    enterpriseData?: any,
+    parsedData?: { keywords?: { nouns?: string[] } },
+    enterpriseData?: unknown,
     options: MockAIOptions = {}
-  ): Promise<any> {
+  ): Promise<{ nodes: MindmapNode[]; connections: Connection[]; metadata: Record<string, unknown> }> {
     const opts = {
       maxNodes: 12,
       language: 'korean',
@@ -33,13 +65,16 @@ export class MockAIGenerator {
 
     // 입력 분석 및 카테고리 결정
     const category = this.detectCategory(userInput);
-    const template = this.getTemplate(category, opts.language);
+    const template = this.getTemplate(category, opts.language as 'korean' | 'english');
 
     // 키워드 추출
     const keywords = parsedData?.keywords?.nouns || this.extractKeywords(userInput);
     
     // 마인드맵 구조 생성
-    const nodes = this.generateNodes(userInput, keywords, template, opts);
+    const nodes = this.generateNodes(userInput, keywords, template, {
+      ...opts,
+      language: (opts.language || 'korean') as 'korean' | 'english'
+    });
     const connections = this.generateConnections(nodes);
 
     console.log(`✅ Mock AI generated ${nodes.length} nodes, ${connections.length} connections`);
@@ -78,8 +113,8 @@ export class MockAIGenerator {
     return 'general';
   }
 
-  private getTemplate(category: string, language: 'korean' | 'english'): any[] {
-    const templates = {
+  private getTemplate(category: string, language: 'korean' | 'english'): TemplateItem[] {
+    const templates: TemplateMap = {
       startup: {
         korean: [
           { title: '비즈니스 모델', content: '수익 구조와 가치 제안' },
@@ -152,10 +187,10 @@ export class MockAIGenerator {
   private generateNodes(
     userInput: string, 
     keywords: string[], 
-    template: any[], 
+    template: TemplateItem[], 
     options: MockAIOptions
-  ) {
-    const nodes = [];
+  ): MindmapNode[] {
+    const nodes: MindmapNode[] = [];
 
     // 중심 노드 생성
     nodes.push({
@@ -174,7 +209,7 @@ export class MockAIGenerator {
     });
 
     // 템플릿 기반 주요 노드 생성
-    const maxMajorNodes = Math.min(template.length, options.maxNodes - 1, 8);
+    const maxMajorNodes = Math.min(template.length, (options.maxNodes ?? 12) - 1, 8);
     const radius = 250;
 
     for (let i = 0; i < maxMajorNodes; i++) {
@@ -198,14 +233,17 @@ export class MockAIGenerator {
       });
 
       // 각 주요 노드에 세부 노드 추가 (선택적)
-      if (nodes.length < options.maxNodes && i < 3) {
+      if (nodes.length < (options.maxNodes ?? 12) && i < 3) {
         const subRadius = radius + 120;
         const subAngle = angle + (Math.random() - 0.5) * 0.5;
 
+        const minorTitle = options.language === 'english' ? `${templateItem.title} Details` : `${templateItem.title} 세부사항`;
+        const minorContent = options.language === 'english' ? `Specific plans and implementation strategies for ${templateItem.title}` : `${templateItem.title}에 대한 구체적인 계획과 실행방안`;
+        
         nodes.push({
           id: `minor-${i}`,
-          title: `${templateItem.title} 세부사항`,
-          content: `${templateItem.title}에 대한 구체적인 계획과 실행방안`,
+          title: minorTitle,
+          content: minorContent,
           x: Math.cos(subAngle) * subRadius,
           y: Math.sin(subAngle) * subRadius,
           type: 'minor',
@@ -219,11 +257,11 @@ export class MockAIGenerator {
       }
     }
 
-    return nodes.slice(0, options.maxNodes);
+    return nodes.slice(0, options.maxNodes ?? 12);
   }
 
-  private generateConnections(nodes: any[]) {
-    const connections = [];
+  private generateConnections(nodes: MindmapNode[]): Connection[] {
+    const connections: Connection[] = [];
     
     nodes.forEach(node => {
       if (node.parentId) {
@@ -261,7 +299,16 @@ export class MockAIGenerator {
     };
 
     const map = contentMap[language];
-    return map[keyword.toLowerCase()] || `${keyword}에 대한 전문적인 접근`;
+    const lowerKeyword = keyword.toLowerCase();
+    
+    // 🔧 FIX: Simplified type-safe access since map is always a defined object
+    const value = (map as Record<string, unknown>)[lowerKeyword];
+    if (typeof value === 'string') {
+      return value;
+    }
+    
+    // Return language-appropriate fallback
+    return language === 'english' ? `Professional approach to ${keyword}` : `${keyword}에 대한 전문적인 접근`;
   }
 }
 

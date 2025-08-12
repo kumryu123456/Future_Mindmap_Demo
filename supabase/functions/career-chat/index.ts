@@ -1,8 +1,10 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+// @ts-expect-error: Deno module resolution
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { getCorsHeaders } from "../_shared/cors.js"
 import { getSupabaseClient } from "../_shared/supabase.js"
 import { rateLimit, addRateLimitHeaders } from "../_shared/rate-limiter.js"
 import { createLogger } from "../_shared/logger.js"
+import { DenoGlobal, SimpleOpenAIResponse } from "../_shared/types.js"
 
 const logger = createLogger('CareerChat')
 logger.info('Career Chat Function initialized!')
@@ -13,30 +15,13 @@ interface ChatRequest {
   useOpenAI?: boolean
 }
 
-interface CareerMapUpdate {
-  id: string
-  title?: string
-  targetRole?: string
-  certificationInfo?: any
-  roadmapSteps?: any[]
-  reviews?: any[]
-}
-
-interface ChatResponse {
-  success: boolean
-  data?: {
-    updatedCareerMap: any
-    aiResponse: string
-    modificationType: string
-  }
-  error?: string
-}
+// Removed unused interfaces CareerMapUpdate and ChatResponse
 
 /**
  * Build career modification prompt for OpenAI
  */
 function buildCareerModificationPrompt(
-  currentCareerMap: any, 
+  currentCareerMap: Record<string, unknown>, 
   userMessage: string
 ): string {
   return `당신은 한국 취업 시장 전문가이자 커리어 컨설턴트입니다. 사용자의 요청에 따라 기존 커리어 로드맵을 수정해주세요.
@@ -103,8 +88,8 @@ function analyzeModificationRequest(message: string): string {
 /**
  * Call OpenAI API for career modification
  */
-async function generateCareerModification(prompt: string): Promise<any> {
-  const openaiApiKey = Deno.env.get('OPENAI_API_KEY')
+async function generateCareerModification(prompt: string): Promise<unknown> {
+  const openaiApiKey = typeof Deno !== 'undefined' ? Deno.env.get('OPENAI_API_KEY') : undefined
   
   if (!openaiApiKey) {
     throw new Error('OpenAI API key not configured')
@@ -139,7 +124,7 @@ async function generateCareerModification(prompt: string): Promise<any> {
     throw new Error(`OpenAI API error: ${response.status} - ${JSON.stringify(errorData)}`)
   }
 
-  const data = await response.json()
+  const data = await response.json() as SimpleOpenAIResponse
   
   if (!data.choices?.[0]?.message?.content) {
     throw new Error('Invalid OpenAI response structure')
@@ -149,7 +134,8 @@ async function generateCareerModification(prompt: string): Promise<any> {
     return JSON.parse(data.choices[0].message.content)
   } catch (error) {
     console.error('Failed to parse OpenAI JSON response')
-    throw new Error(`Invalid JSON from OpenAI: ${error.message}`)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown parsing error'
+    throw new Error(`Invalid JSON from OpenAI: ${errorMessage}`)
   }
 }
 
@@ -157,9 +143,9 @@ async function generateCareerModification(prompt: string): Promise<any> {
  * Generate fallback modification response
  */
 function generateFallbackModification(
-  currentCareerMap: any, 
+  currentCareerMap: Record<string, unknown>, 
   userMessage: string
-): any {
+): Record<string, unknown> {
   const modificationType = analyzeModificationRequest(userMessage)
   
   const fallbackResponse = {
@@ -194,25 +180,26 @@ function generateFallbackModification(
  * Apply modifications to career map
  */
 function applyModifications(
-  currentCareerMap: any, 
-  modifications: any
-): any {
+  currentCareerMap: Record<string, unknown>, 
+  modifications: Record<string, unknown>
+): Record<string, unknown> {
   const updatedCareerMap = { ...currentCareerMap }
+  const updatedFields = modifications.updatedFields as Record<string, unknown>
 
-  if (modifications.updatedFields.title) {
-    updatedCareerMap.title = modifications.updatedFields.title
+  if (updatedFields?.title) {
+    updatedCareerMap.title = updatedFields.title
   }
 
-  if (modifications.updatedFields.target_role) {
-    updatedCareerMap.target_role = modifications.updatedFields.target_role
+  if (updatedFields?.target_role) {
+    updatedCareerMap.target_role = updatedFields.target_role
   }
 
-  if (modifications.updatedFields.certification_info) {
-    updatedCareerMap.certification_info = modifications.updatedFields.certification_info
+  if (updatedFields?.certification_info) {
+    updatedCareerMap.certification_info = updatedFields.certification_info
   }
 
-  if (modifications.updatedFields.roadmap_steps) {
-    updatedCareerMap.roadmap_steps = modifications.updatedFields.roadmap_steps
+  if (updatedFields?.roadmap_steps) {
+    updatedCareerMap.roadmap_steps = updatedFields.roadmap_steps
   }
 
   return updatedCareerMap
@@ -221,18 +208,25 @@ function applyModifications(
 /**
  * Validate modification structure
  */
-function validateModifications(modifications: any): { isValid: boolean; errors: string[] } {
+function validateModifications(modifications: unknown): { isValid: boolean; errors: string[] } {
   const errors: string[] = []
+  
+  if (typeof modifications !== 'object' || modifications === null) {
+    errors.push('유효하지 않은 수정사항 구조입니다')
+    return { isValid: false, errors }
+  }
+  
+  const modificationsObj = modifications as Record<string, unknown>
 
-  if (!modifications.modificationType) {
+  if (!modificationsObj.modificationType) {
     errors.push('수정 유형이 필요합니다')
   }
 
-  if (!modifications.aiResponse || typeof modifications.aiResponse !== 'string') {
+  if (!modificationsObj.aiResponse || typeof modificationsObj.aiResponse !== 'string') {
     errors.push('AI 응답 메시지가 필요합니다')
   }
 
-  if (!modifications.updatedFields || typeof modifications.updatedFields !== 'object') {
+  if (!modificationsObj.updatedFields || typeof modificationsObj.updatedFields !== 'object') {
     errors.push('업데이트된 필드 정보가 필요합니다')
   }
 
@@ -242,12 +236,12 @@ function validateModifications(modifications: any): { isValid: boolean; errors: 
   }
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   const { method } = req
 
   // Handle CORS preflight
   if (method === 'OPTIONS') {
-    const origin = req.headers.get('Origin')
+    const origin = req.headers.get('Origin') || undefined
     return new Response('ok', { headers: getCorsHeaders(origin) })
   }
 
@@ -277,7 +271,7 @@ serve(async (req) => {
           }),
           { 
             status: 400,
-            headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+            headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" }
           }
         )
       }
@@ -299,26 +293,27 @@ serve(async (req) => {
           }),
           { 
             status: 404,
-            headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+            headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" }
           }
         )
       }
 
       // Step 2: Generate modifications
-      let modificationData: any
+      let modificationData: Record<string, unknown>
       let aiSource = 'openai'
 
       if (useOpenAI) {
         try {
           const prompt = buildCareerModificationPrompt(currentCareerMap, message)
-          modificationData = await generateCareerModification(prompt)
+          modificationData = await generateCareerModification(prompt) as Record<string, unknown>
           
           const validation = validateModifications(modificationData)
           if (!validation.isValid) {
             throw new Error(`검증 실패: ${validation.errors.join(', ')}`)
           }
-        } catch (error) {
-          console.error('OpenAI modification failed:', error.message)
+        } catch (error: unknown) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+          console.error('OpenAI modification failed:', errorMessage)
           logger.info('Using fallback modification')
           modificationData = generateFallbackModification(currentCareerMap, message)
           aiSource = 'fallback'
@@ -392,7 +387,7 @@ serve(async (req) => {
         }),
         { 
           status: 200,
-          headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+          headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" }
         }
       )
       
@@ -412,7 +407,7 @@ serve(async (req) => {
           }),
           { 
             status: 400,
-            headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+            headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" }
           }
         )
       }
@@ -435,7 +430,7 @@ serve(async (req) => {
         }),
         { 
           status: 200,
-          headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+          headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" }
         }
       )
     }
@@ -447,20 +442,22 @@ serve(async (req) => {
       }),
       { 
         status: 405,
-        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+        headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" }
       }
     )
 
-  } catch (error) {
-    logger.error('Career chat error:', error)
+  } catch (error: unknown) {
+    const errorForLog = error instanceof Error ? error : new Error(String(error))
+    logger.error('Career chat error:', errorForLog)
+    const errorMessage = error instanceof Error ? error.message : '커리어 채팅 처리 중 오류가 발생했습니다'
     return new Response(
       JSON.stringify({ 
-        error: error.message || '커리어 채팅 처리 중 오류가 발생했습니다',
+        error: errorMessage,
         success: false 
       }),
       { 
         status: 500,
-        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+        headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" }
       }
     )
   }

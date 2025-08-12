@@ -1,6 +1,8 @@
 // OpenAI integration utility for Supabase Edge Functions
 // ===================================================
 
+import { OpenAIResponse, DenoGlobal } from './types.js';
+
 export interface OpenAIConfig {
   apiKey: string;
   model?: string;
@@ -8,13 +10,24 @@ export interface OpenAIConfig {
   maxTokens?: number;
 }
 
-// 환경변수에서 OpenAI API 키 가져오기 또는 하드코딩된 키 사용
-const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY') || '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';
+// Type guard to safely check if globalThis has Deno
+function hasDenoEnv(global: typeof globalThis): global is typeof globalThis & { Deno: DenoGlobal } {
+  return (
+    'Deno' in global &&
+    typeof global.Deno === 'object' &&
+    global.Deno !== null &&
+    'env' in global.Deno &&
+    typeof global.Deno.env === 'object'
+  )
+}
+
+// 환경변수에서 OpenAI API 키 가져오기 - Deno 네이티브 API 사용  
+const OPENAI_API_KEY = hasDenoEnv(globalThis) ? (globalThis as { Deno?: DenoGlobal }).Deno?.env?.get('OPENAI_API_KEY') : undefined
 
 if (!OPENAI_API_KEY || OPENAI_API_KEY === 'your_openai_key_here') {
   console.error('⚠️ OPENAI_API_KEY not configured properly');
 } else {
-  console.log('✅ OpenAI API Key configured:', `${OPENAI_API_KEY.substring(0, 8)}...${OPENAI_API_KEY.substring(OPENAI_API_KEY.length - 4)}`);
+  console.log('✅ OpenAI API Key configured: Environment variable is present');
 }
 
 const DEFAULT_CONFIG: Omit<OpenAIConfig, 'apiKey'> = {
@@ -28,25 +41,7 @@ export interface ChatMessage {
   content: string;
 }
 
-export interface OpenAIResponse {
-  id: string;
-  object: string;
-  created: number;
-  model: string;
-  choices: {
-    index: number;
-    message: {
-      role: string;
-      content: string;
-    };
-    finish_reason: string;
-  }[];
-  usage: {
-    prompt_tokens: number;
-    completion_tokens: number;
-    total_tokens: number;
-  };
-}
+// OpenAIResponse interface is now imported from types.js
 
 /**
  * OpenAI API wrapper class
@@ -102,13 +97,51 @@ export class OpenAIClient {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
+        // 🔧 FIX: Enhanced error logging with safe error handling
+        let errorDetails: Record<string, unknown> = {}
+        let errorText = 'Unknown error'
+        
+        try {
+          errorText = await response.text()
+          
+          // Try to parse as JSON for structured error information
+          try {
+            const errorJson = JSON.parse(errorText)
+            errorDetails = {
+              type: errorJson.error?.type || 'unknown',
+              code: errorJson.error?.code || response.status,
+              message: errorJson.error?.message || errorText
+            }
+          } catch {
+            // If not JSON, use raw text
+            errorDetails = { message: errorText }
+          }
+        } catch (textError) {
+          console.warn('Failed to read error response text:', textError)
+          errorDetails = { message: 'Unable to read error response' }
+        }
+
         console.error('❌ OpenAI API Error:', {
           status: response.status,
           statusText: response.statusText,
-          error: errorText
-        });
-        throw new Error(`OpenAI API error: ${response.status} ${response.statusText} - ${errorText}`);
+          url: response.url,
+          timestamp: new Date().toISOString(),
+          errorDetails,
+          // Include request info (without sensitive data)
+          requestModel: config.model,
+          requestMessageCount: messages.length
+        })
+
+        // Create user-friendly error message
+        const userMessage = response.status === 401 
+          ? 'OpenAI API key is invalid or expired'
+          : response.status === 429
+          ? 'OpenAI API rate limit exceeded. Please try again later.'
+          : response.status === 500
+          ? 'OpenAI service is temporarily unavailable'
+          : `OpenAI API error (${response.status}): ${errorDetails.message || errorText}`
+
+        throw new Error(userMessage)
       }
 
       const result = await response.json() as OpenAIResponse;
@@ -122,8 +155,24 @@ export class OpenAIClient {
 
       return result;
     } catch (error) {
-      console.error('💥 OpenAI Request failed:', error);
-      throw error;
+      // 🔧 FIX: Enhanced general error logging with context
+      console.error('💥 OpenAI Request failed:', {
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack?.substring(0, 500) // Limit stack trace length
+        } : error,
+        timestamp: new Date().toISOString(),
+        requestContext: {
+          model: config.model,
+          messagesCount: messages.length,
+          temperature: config.temperature,
+          maxTokens: config.maxTokens
+        }
+      })
+      
+      // Re-throw the original error (which may have user-friendly message from above)
+      throw error
     }
   }
 
@@ -132,14 +181,35 @@ export class OpenAIClient {
    */
   async generateMindmapContent(
     userInput: string,
-    parsedData?: any,
-    enterpriseData?: any,
+    parsedData?: { keywords?: { nouns?: string[] } },
+    enterpriseData?: unknown,
     options?: {
       maxNodes?: number;
       language?: 'korean' | 'english';
       includeMetadata?: boolean;
     }
-  ): Promise<any> {
+  ): Promise<{
+    nodes: Array<{
+      id: string;
+      title: string;
+      content: string;
+      x: number;
+      y: number;
+      type: string;
+      level: number;
+      metadata: {
+        source: string;
+        confidence: number;
+        keywords: string[];
+      };
+    }>;
+    connections: Array<{
+      id: string;
+      sourceId: string;
+      targetId: string;
+      type: string;
+    }>;
+  }> {
     const opts = {
       maxNodes: 12,
       language: 'korean',
@@ -147,17 +217,20 @@ export class OpenAIClient {
       ...options
     };
 
+    // 🔧 FIX: Enhanced Korean localization in system prompt
+    const languageInstructions = opts.language === 'korean' 
+      ? `한국어로만 응답해주세요. 모든 텍스트는 올바른 한국어(한글)로 작성하고, UTF-8 인코딩을 유지해주세요. 깨진 텍스트나 영어 단어가 섞이지 않도록 주의해주세요.`
+      : `Respond in English only. Ensure proper UTF-8 encoding is maintained.`
+
     const systemPrompt = `You are an expert mindmap generator that creates structured, hierarchical mindmaps.
 
 IMPORTANT LANGUAGE REQUIREMENT:
-- If language is 'korean', ALL text must be written in proper Korean (한국어)
-- Use Korean characters (한글) only, no broken or corrupted text
-- Ensure UTF-8 encoding is maintained throughout
+${languageInstructions}
 
 REQUIREMENTS:
 1. Generate exactly ${opts.maxNodes} nodes maximum
 2. Create a hierarchical structure with 1 center node, 2-4 major nodes, and supporting minor nodes
-3. Use ${opts.language === 'korean' ? 'KOREAN LANGUAGE (한국어) ONLY' : 'English language'} 
+3. Use ${opts.language === 'korean' ? '한국어만 사용' : 'English language only'}
 4. Include metadata with source information and confidence scores
 5. Position nodes in a logical hierarchy
 
@@ -234,16 +307,47 @@ Create a comprehensive mindmap with proper Korean terms and business context.`;
       return mindmapData;
 
     } catch (parseError) {
-      console.error('❌ Failed to parse OpenAI response as JSON:', parseError);
-      console.error('Raw response:', content);
+      // 🔧 FIX: Enhanced JSON parsing error logging
+      console.error('❌ Failed to parse OpenAI response as JSON:', {
+        error: parseError instanceof Error ? {
+          name: parseError.name,
+          message: parseError.message
+        } : parseError,
+        timestamp: new Date().toISOString(),
+        responseLength: content?.length || 0,
+        responsePreview: content?.substring(0, 200) || 'No content',
+        requestContext: {
+          userInput: userInput?.substring(0, 100) || 'No input',
+          language: opts.language,
+          maxNodes: opts.maxNodes
+        }
+      })
       
-      // Fallback: create a simple mindmap
+      // 🔧 FIX: Enhanced Korean localization with proper UTF-8 handling
+      const isKorean = options?.language === 'korean';
+      
+      // Localized messages with proper UTF-8 encoding
+      const localizedMessages = {
+        korean: {
+          mainTopic: '주요 주제',
+          errorContent: 'AI 생성 중 오류가 발생했습니다. 다시 시도해 주세요.',
+          keywords: ['오류', '재시도', 'AI생성']
+        },
+        english: {
+          mainTopic: 'Main Topic',
+          errorContent: 'Error occurred during AI generation. Please try again.',
+          keywords: ['error', 'retry', 'ai-generation']
+        }
+      }
+      
+      const messages = isKorean ? localizedMessages.korean : localizedMessages.english
+      
       return {
         nodes: [
           {
             id: 'center',
-            title: userInput || 'Main Topic',
-            content: 'AI 생성 중 오류가 발생했습니다',
+            title: userInput || messages.mainTopic,
+            content: messages.errorContent,
             x: 0,
             y: 0,
             type: 'center',
@@ -251,7 +355,7 @@ Create a comprehensive mindmap with proper Korean terms and business context.`;
             metadata: {
               source: 'fallback',
               confidence: 0.5,
-              keywords: ['오류', '재시도']
+              keywords: messages.keywords
             }
           }
         ],
@@ -268,29 +372,34 @@ Create a comprehensive mindmap with proper Korean terms and business context.`;
   }
 
   /**
-   * Get masked API key for logging
+   * Check if API key is configured (returns boolean indicator only)
    */
-  getMaskedApiKey(): string {
-    if (!this.config.apiKey) return 'Not configured';
-    return `${this.config.apiKey.substring(0, 8)}...${this.config.apiKey.substring(this.config.apiKey.length - 4)}`;
+  isConfigured(): boolean {
+    return !!this.config.apiKey;
+  }
+  
+  /**
+   * Get safe API key status (no key material exposed)
+   */
+  getApiKeyStatus(): string {
+    return this.config.apiKey ? 'Configured' : 'Not configured';
   }
 }
 
 // Export singleton instance
-export const openAIClient = OPENAI_API_KEY ? new OpenAIClient() : null;
+/**
+ * 🔧 FIX: OpenAI client singleton instance that may be null when OPENAI_API_KEY is not set.
+ * Callers must check for null before using or use helper functions that throw appropriate errors.
+ */
+export const openAIClient: OpenAIClient | null = OPENAI_API_KEY ? new OpenAIClient() : null;
 
 // Export utility functions
 export function isOpenAIEnabled(): boolean {
   return OpenAIClient.isAvailable();
 }
 
-export function getOpenAIStatus(): { available: boolean; keyMasked?: string } {
-  if (!OPENAI_API_KEY) {
-    return { available: false };
-  }
-  
+export function getOpenAIStatus(): { available: boolean } {
   return {
-    available: true,
-    keyMasked: `${OPENAI_API_KEY.substring(0, 8)}...${OPENAI_API_KEY.substring(OPENAI_API_KEY.length - 4)}`
+    available: !!OPENAI_API_KEY
   };
 }

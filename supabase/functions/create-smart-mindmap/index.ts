@@ -1,9 +1,10 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { getCorsHeaders } from '../_shared/cors.js'
-import { getSupabaseClient } from '../_shared/supabase.js'
-import { generateEmbedding } from '../_shared/embeddings.js'
+// @ts-expect-error: Deno module resolution
+import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
+import { getCorsJsonHeaders } from '../_shared/cors.js'
+// Removed unused import: generateEmbedding
 import { openAIClient, isOpenAIEnabled, getOpenAIStatus } from '../_shared/openai.js'
 import { mockAIGenerator } from '../_shared/mock-ai.js'
+import type { DenoGlobal } from '../_shared/types.js'
 
 // Types for the smart mindmap creation
 interface SmartMindmapRequest {
@@ -11,9 +12,56 @@ interface SmartMindmapRequest {
   options?: {
     maxNodes?: number
     includeEnterpriseData?: boolean
-    includeRAG?: boolean
-    layout?: 'hierarchical' | 'radial' | 'force'
-    language?: string
+    language?: 'korean' | 'english'
+  }
+}
+
+/**
+ * Normalize and validate mindmap node from AI generation
+ */
+function normalizeNode(node: unknown): MindmapNode {
+  const nodeRecord = node as Record<string, unknown>
+  
+  // Validate and normalize type
+  let nodeType: 'center' | 'major' | 'minor' | 'detail' = 'major'
+  if (nodeRecord.type === 'center' || nodeRecord.type === 'major' || nodeRecord.type === 'minor' || nodeRecord.type === 'detail') {
+    nodeType = nodeRecord.type
+  }
+
+  // Ensure metadata exists and normalize source
+  let metadata: MindmapNode['metadata'] = {
+    source: 'ai',
+    confidence: 0.8,
+    keywords: []
+  }
+
+  if (nodeRecord.metadata && typeof nodeRecord.metadata === 'object') {
+    const metadataRecord = nodeRecord.metadata as Record<string, unknown>
+    const source = metadataRecord.source
+    let normalizedSource: 'ai' | 'parsed' | 'enterprise' | 'rag' = 'ai'
+    
+    if (source === 'ai' || source === 'parsed' || source === 'enterprise' || source === 'rag') {
+      normalizedSource = source
+    }
+
+    metadata = {
+      source: normalizedSource,
+      confidence: typeof metadataRecord.confidence === 'number' ? metadataRecord.confidence : 0.8,
+      keywords: Array.isArray(metadataRecord.keywords) ? metadataRecord.keywords : [],
+      relatedCompanies: Array.isArray(metadataRecord.relatedCompanies) ? metadataRecord.relatedCompanies : undefined
+    }
+  }
+
+  return {
+    id: typeof nodeRecord.id === 'string' ? nodeRecord.id : '',
+    title: typeof nodeRecord.title === 'string' ? nodeRecord.title : '',
+    content: typeof nodeRecord.content === 'string' ? nodeRecord.content : '',
+    x: typeof nodeRecord.x === 'number' ? nodeRecord.x : 0,
+    y: typeof nodeRecord.y === 'number' ? nodeRecord.y : 0,
+    level: typeof nodeRecord.level === 'number' ? nodeRecord.level : 0,
+    parentId: typeof nodeRecord.parentId === 'string' ? nodeRecord.parentId : undefined,
+    type: nodeType,
+    metadata
   }
 }
 
@@ -48,50 +96,38 @@ interface SmartMindmapResponse {
       processingTime: number
       sources: string[]
       totalNodes: number
-      parseResults: any
-      enterpriseResults: any
+      parseResults: unknown
+      enterpriseResults: unknown
     }
   }
   error?: string
 }
 
 serve(async (req: Request) => {
-  const corsHeaders = getCorsHeaders(req.headers.get('origin'))
+  const origin = req.headers.get('origin') || undefined
+  const corsJsonHeaders = getCorsJsonHeaders(origin)
 
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { headers: corsJsonHeaders })
   }
 
   try {
     const startTime = Date.now()
-    const supabase = getSupabaseClient()
 
     // Parse request body with enhanced UTF-8 handling
     let requestData: SmartMindmapRequest
     try {
-      // Enhanced UTF-8 JSON parsing for Korean text
-      let textBody: string
-      
-      try {
-        // Primary: UTF-8 with error handling
-        const textDecoder = new TextDecoder('utf-8', { fatal: true })
-        const rawBody = await req.arrayBuffer()
-        textBody = textDecoder.decode(rawBody)
-      } catch (decodeError) {
-        console.warn('UTF-8 decoding failed, trying fallback:', decodeError)
-        // Fallback: Try without fatal flag
-        const textDecoder = new TextDecoder('utf-8', { fatal: false })
-        const rawBody = await req.arrayBuffer()
-        textBody = textDecoder.decode(rawBody)
-      }
+      // 🔧 FIX: Simplified UTF-8 decoding using Request.text() which handles UTF-8 automatically
+      const textBody = await req.text()
       
       console.log('📥 Smart Mindmap received text body:', textBody)
       requestData = JSON.parse(textBody)
     } catch (parseError) {
+      console.error('JSON parsing failed:', parseError)
       return Response.json(
         { success: false, error: 'Invalid JSON in request body' },
-        { status: 400, headers: corsHeaders }
+        { status: 400, headers: corsJsonHeaders }
       )
     }
 
@@ -100,15 +136,14 @@ serve(async (req: Request) => {
     if (!input || input.trim() === '') {
       return Response.json(
         { success: false, error: 'Input text is required' },
-        { status: 400, headers: corsHeaders }
+        { status: 400, headers: corsJsonHeaders }
       )
     }
 
+    // 🔧 FIX: Removed unused variables includeRAG and layout
     const {
       maxNodes = 12,
       includeEnterpriseData = true,
-      includeRAG = false, // RAG는 2단계에서 사용
-      layout = 'hierarchical',
       language = 'korean'
     } = options
 
@@ -116,7 +151,13 @@ serve(async (req: Request) => {
 
     // Step 1: Parse input text (Korean NLP)
     console.log('[Step 1] Parsing input...')
-    const parseResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/parse-input`, {
+    const deno = (globalThis as { Deno?: DenoGlobal }).Deno
+    const supabaseUrl = deno?.env?.get('SUPABASE_URL')
+    
+    if (!supabaseUrl || supabaseUrl === '') {
+      throw new Error('SUPABASE_URL not set in environment variables')
+    }
+    const parseResponse = await fetch(`${supabaseUrl}/functions/v1/parse-input`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
@@ -141,9 +182,11 @@ serve(async (req: Request) => {
       console.log('[Step 2] Fetching enterprise data...')
       
       // Use main keywords for enterprise search
-      const mainKeywords = parseData.data.keywords.nouns?.slice(0, 3) || [input.split(' ')[0]]
+      const inputTokens = input.trim().split(/\s+/).filter(token => token.length > 0)
+      const fallbackToken = inputTokens.length > 0 ? inputTokens[0] : 'keyword'
+      const mainKeywords = parseData.data.keywords.nouns?.slice(0, 3) || [fallbackToken]
       
-      const enterpriseResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/fetch-enterprise-data`, {
+      const enterpriseResponse = await fetch(`${supabaseUrl}/functions/v1/fetch-enterprise-data`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
@@ -166,7 +209,9 @@ serve(async (req: Request) => {
     console.log('[Step 3] Generating smart mindmap structure with OpenAI...')
     
     let nodes: MindmapNode[] = []
-    let connections: any[] = []
+    let connections: Array<{ id: string; sourceId: string; targetId: string; type: string }> = []
+    let usedMockAI = false
+    let usedFallback = false
 
     // Check OpenAI availability
     const openAIStatus = getOpenAIStatus()
@@ -186,7 +231,7 @@ serve(async (req: Request) => {
           }
         )
 
-        nodes = mindmapData.nodes || []
+        nodes = (mindmapData.nodes || []).map(normalizeNode)
         connections = mindmapData.connections || []
 
         console.log(`✅ OpenAI generated ${nodes.length} nodes and ${connections.length} connections`)
@@ -204,8 +249,9 @@ serve(async (req: Request) => {
             includeMetadata: true
           }
         )
-        nodes = mockResult.nodes || []
+        nodes = (mockResult.nodes || []).map(normalizeNode)
         connections = mockResult.connections || []
+        usedMockAI = true
       }
     } else {
       console.log('⚠️ OpenAI not available, using Mock AI generation')
@@ -220,13 +266,15 @@ serve(async (req: Request) => {
           includeMetadata: true
         }
       )
-      nodes = mockResult.nodes || []
+      nodes = (mockResult.nodes || []).map(normalizeNode)
       connections = mockResult.connections || []
+      usedMockAI = true
     }
 
     // Step 4: Fallback mindmap generation if OpenAI is not available or failed
     if (nodes.length === 0) {
       console.log('[Step 4] Using fallback mindmap generation...')
+      usedFallback = true
       
       // Create center node
       const centerNode: MindmapNode = {
@@ -246,7 +294,9 @@ serve(async (req: Request) => {
       nodes.push(centerNode)
 
       // Generate basic nodes from parsed keywords
-      const keywords = parseData.data.keywords?.nouns || [input.split(' ')[0]]
+      const inputTokens = input.trim().split(/\s+/).filter(token => token.length > 0)
+      const fallbackToken = inputTokens.length > 0 ? inputTokens[0] : 'keyword'
+      const keywords = parseData.data.keywords?.nouns || [fallbackToken]
       const maxMainNodes = Math.min(keywords.length, maxNodes - 1, 6)
 
       keywords.slice(0, maxMainNodes).forEach((keyword: string, index: number) => {
@@ -292,7 +342,11 @@ serve(async (req: Request) => {
         connections,
         metadata: {
           processingTime,
-          sources: ['parse-input', ...(includeEnterpriseData ? ['enterprise-data'] : []), 'ai-generation'],
+          sources: [
+            'parse-input', 
+            ...(includeEnterpriseData ? ['enterprise-data'] : []), 
+            usedMockAI ? 'mock-ai' : (usedFallback ? 'fallback-generation' : 'ai-generation')
+          ],
           totalNodes: nodes.length,
           parseResults: parseData.data,
           enterpriseResults: enterpriseData
@@ -300,17 +354,18 @@ serve(async (req: Request) => {
       }
     }
 
-    return Response.json(response, { headers: corsHeaders })
+    return Response.json(response, { headers: corsJsonHeaders })
 
   } catch (error) {
     console.error('[Smart Mindmap] Error:', error)
     
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
     return Response.json(
       { 
         success: false, 
-        error: `Smart mindmap generation failed: ${error.message}` 
+        error: `Smart mindmap generation failed: ${errorMessage}` 
       },
-      { status: 500, headers: corsHeaders }
+      { status: 500, headers: corsJsonHeaders }
     )
   }
 })

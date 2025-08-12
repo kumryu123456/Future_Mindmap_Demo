@@ -1,8 +1,10 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+// @ts-expect-error: Deno module resolution
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts"
 import { getCorsHeaders } from "../_shared/cors.js"
 import { getSupabaseClient } from "../_shared/supabase.js"
 import { rateLimit, addRateLimitHeaders } from "../_shared/rate-limiter.js"
 import { createLogger } from "../_shared/logger.js"
+import type { DenoGlobal, SimpleOpenAIResponse } from "../_shared/types.js"
 
 const logger = createLogger('CareerOnboarding')
 logger.info('Career Onboarding Function initialized!')
@@ -99,7 +101,7 @@ const KOREAN_CAREER_DATA = {
     sql: ["데이터 사이언티스트", "백엔드 개발자", "데이터 엔지니어"],
     aws: ["DevOps 엔지니어", "클라우드 엔지니어", "백엔드 개발자"],
     docker: ["DevOps 엔지니어", "백엔드 개발자"]
-  }
+  } as Record<string, string[]>
 }
 
 /**
@@ -218,8 +220,9 @@ function inferTargetRoles(skills: string[], goal: string): string[] {
   
   // Skills-based inference
   skills.forEach(skill => {
-    if (KOREAN_CAREER_DATA.skillMappings[skill]) {
-      roles.push(...KOREAN_CAREER_DATA.skillMappings[skill])
+    const mappedRoles = (KOREAN_CAREER_DATA.skillMappings as Record<string, string[]>)[skill]
+    if (mappedRoles) {
+      roles.push(...mappedRoles)
     }
   })
   
@@ -230,8 +233,9 @@ function inferTargetRoles(skills: string[], goal: string): string[] {
 /**
  * Call OpenAI API for career roadmap generation
  */
-async function generateCareerRoadmap(prompt: string): Promise<any> {
-  const openaiApiKey = Deno.env.get('OPENAI_API_KEY')
+async function generateCareerRoadmap(prompt: string): Promise<unknown> {
+  const deno = (globalThis as { Deno?: DenoGlobal }).Deno
+  const openaiApiKey = deno?.env?.get('OPENAI_API_KEY')
   
   if (!openaiApiKey) {
     throw new Error('OpenAI API key not configured')
@@ -266,7 +270,7 @@ async function generateCareerRoadmap(prompt: string): Promise<any> {
     throw new Error(`OpenAI API error: ${response.status} - ${JSON.stringify(errorData)}`)
   }
 
-  const data = await response.json()
+  const data = await response.json() as SimpleOpenAIResponse
   
   if (!data.choices?.[0]?.message?.content) {
     throw new Error('Invalid OpenAI response structure')
@@ -276,14 +280,15 @@ async function generateCareerRoadmap(prompt: string): Promise<any> {
     return JSON.parse(data.choices[0].message.content)
   } catch (error) {
     console.error('Failed to parse OpenAI JSON response')
-    throw new Error(`Invalid JSON from OpenAI: ${error.message}`)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown parsing error'
+    throw new Error(`Invalid JSON from OpenAI: ${errorMessage}`)
   }
 }
 
 /**
  * Generate fallback career roadmap
  */
-function generateFallbackRoadmap(formData: OnboardingFormData): any {
+function generateFallbackRoadmap(formData: OnboardingFormData): unknown {
   const targetRoles = inferTargetRoles(formData.skills, formData.goal)
   const targetRole = targetRoles[0] || "소프트웨어 개발자"
   
@@ -353,26 +358,56 @@ function generateFallbackRoadmap(formData: OnboardingFormData): any {
 }
 
 /**
+ * Type guard to validate roadmap data structure
+ */
+function isValidRoadmapData(data: unknown): data is { 
+  title: string; 
+  targetRole: string; 
+  certification: unknown; 
+  roadmapSteps: unknown 
+} {
+  if (!data || typeof data !== 'object') {
+    return false;
+  }
+  
+  const obj = data as Record<string, unknown>;
+  
+  return (
+    typeof obj.title === 'string' &&
+    typeof obj.targetRole === 'string' &&
+    obj.certification !== undefined &&
+    obj.roadmapSteps !== undefined
+  );
+}
+
+/**
  * Validate career roadmap structure
  */
-function validateCareerRoadmap(roadmap: any): { isValid: boolean; errors: string[] } {
+function validateCareerRoadmap(roadmap: unknown): { isValid: boolean; errors: string[] } {
   const errors: string[] = []
+  
+  if (typeof roadmap !== 'object' || roadmap === null) {
+    errors.push('유효하지 않은 로드맵 구조입니다')
+    return { isValid: false, errors }
+  }
+  
+  const roadmapObj = roadmap as Record<string, unknown>
 
-  if (!roadmap.title || typeof roadmap.title !== 'string') {
+  if (!roadmapObj.title || typeof roadmapObj.title !== 'string') {
     errors.push('제목이 필요합니다')
   }
 
-  if (!roadmap.targetRole || typeof roadmap.targetRole !== 'string') {
+  if (!roadmapObj.targetRole || typeof roadmapObj.targetRole !== 'string') {
     errors.push('목표 직무가 필요합니다')
   }
 
-  if (!roadmap.certification || typeof roadmap.certification !== 'object') {
+  if (!roadmapObj.certification || typeof roadmapObj.certification !== 'object') {
     errors.push('자격증 정보가 필요합니다')
   }
 
-  if (!Array.isArray(roadmap.roadmapSteps)) {
+  if (!Array.isArray(roadmapObj.roadmapSteps)) {
     errors.push('로드맵 단계가 필요합니다')
-  } else if (roadmap.roadmapSteps.length < 3) {
+  } else if (roadmapObj.roadmapSteps.length < 3) {
     errors.push('최소 3개의 로드맵 단계가 필요합니다')
   }
 
@@ -382,12 +417,12 @@ function validateCareerRoadmap(roadmap: any): { isValid: boolean; errors: string
   }
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   const { method } = req
 
   // Handle CORS preflight
   if (method === 'OPTIONS') {
-    const origin = req.headers.get('Origin')
+    const origin = req.headers.get('Origin') || undefined
     return new Response('ok', { headers: getCorsHeaders(origin) })
   }
 
@@ -419,7 +454,7 @@ serve(async (req) => {
           }),
           { 
             status: 400,
-            headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+            headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" }
           }
         )
       }
@@ -447,7 +482,7 @@ serve(async (req) => {
       }
 
       // Step 2: Generate career roadmap
-      let roadmapData: any
+      let roadmapData: unknown
       let aiSource = 'openai'
 
       if (useOpenAI) {
@@ -459,8 +494,9 @@ serve(async (req) => {
           if (!validation.isValid) {
             throw new Error(`검증 실패: ${validation.errors.join(', ')}`)
           }
-        } catch (error) {
-          console.error('OpenAI generation failed:', error.message)
+        } catch (error: unknown) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+          console.error('OpenAI generation failed:', errorMessage)
           logger.info('Using fallback generation')
           roadmapData = generateFallbackRoadmap(formData)
           aiSource = 'fallback'
@@ -470,8 +506,12 @@ serve(async (req) => {
         aiSource = 'fallback'
       }
 
-      // Step 3: Save career map
-      const now = new Date().toISOString()
+      // Step 3: Validate roadmap data structure
+      if (!isValidRoadmapData(roadmapData)) {
+        throw new Error('Generated roadmap data is invalid or missing required fields');
+      }
+
+      // Step 4: Save career map
       const { data: savedCareerMap, error: careerMapError } = await supabase
         .from('career_maps')
         .insert({
@@ -492,7 +532,7 @@ serve(async (req) => {
         throw new Error('커리어 맵 저장에 실패했습니다')
       }
 
-      // Step 4: Format response to match frontend expectations
+      // Step 5: Format response to match frontend expectations
       const careerMapResponse: CareerMap = {
         id: savedCareerMap.id,
         title: savedCareerMap.title,
@@ -515,7 +555,7 @@ serve(async (req) => {
         }),
         { 
           status: 201,
-          headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+          headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" }
         }
       )
       
@@ -529,20 +569,22 @@ serve(async (req) => {
       }),
       { 
         status: 405,
-        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+        headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" }
       }
     )
 
-  } catch (error) {
-    logger.error('Career onboarding error:', error)
+  } catch (error: unknown) {
+    const errorForLog = error instanceof Error ? error : new Error(String(error))
+    logger.error('Career onboarding error:', errorForLog)
+    const errorMessage = error instanceof Error ? error.message : '커리어 온보딩 처리 중 오류가 발생했습니다'
     return new Response(
       JSON.stringify({ 
-        error: error.message || '커리어 온보딩 처리 중 오류가 발생했습니다',
+        error: errorMessage,
         success: false 
       }),
       { 
         status: 500,
-        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+        headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" }
       }
     )
   }

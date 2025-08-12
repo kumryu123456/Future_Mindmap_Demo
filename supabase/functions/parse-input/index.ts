@@ -1,4 +1,5 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+// @ts-expect-error: Deno module resolution
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { getCorsHeaders } from "../_shared/cors.js"
 import { getSupabaseClient } from "../_shared/supabase.js"
 import { rateLimit, addRateLimitHeaders } from "../_shared/rate-limiter.js"
@@ -133,67 +134,34 @@ const COMPOUND_PATTERNS = [
 ]
 
 /**
- * 🔧 FIX: Enhanced Korean morphological analysis with compound word handling
+ * Extract nouns from Korean text with stopwords, particles, endings, and compound detection
  */
-function extractKoreanKeywords(rawText: string): ExtractedKeywords {
-  const language = detectLanguage(rawText)
-  const normalizedText = normalizeKoreanText(rawText)
+function extractNouns(rawText: string, normalizedText: string): string[] {
   const words = normalizedText.split(/\s+/).filter(word => word.length > 0)
-  
   const nouns: string[] = []
-  const verbs: string[] = []
-  const adjectives: string[] = []
-  const particles: string[] = []
-  const entities: string[] = []
-  const topics: string[] = []
   
-  // 🔧 FIX: Enhanced word analysis with compound word detection
   words.forEach(word => {
     // Skip stopwords
     if (KOREAN_STOPWORDS.includes(word)) return
     
-    // 🔧 FIX: Technical and business term recognition
+    // Technical and business term recognition
     if (TECH_TERMS.includes(word) || BUSINESS_TERMS.includes(word)) {
       nouns.push(word)
       return
     }
     
-    // 🔧 FIX: Enhanced particle extraction with better stem handling
-    let foundParticle = false
+    // Handle particles - extract stems
     for (const particle of KOREAN_PARTICLES) {
       if (word.endsWith(particle) && word.length > particle.length + 1) {
-        particles.push(particle)
         const stem = word.slice(0, -particle.length)
         if (stem.length > 1) {
           nouns.push(stem)
-          foundParticle = true
-          break
+          return
         }
       }
     }
     
-    // 🔧 FIX: Enhanced ending pattern analysis
-    if (!foundParticle) {
-      let foundEnding = false
-      for (const ending of KOREAN_ENDINGS) {
-        if (word.endsWith(ending) && word.length > ending.length + 1) {
-          const stem = word.slice(0, -ending.length)
-          if (stem.length > 1) {
-            // Better classification of verbs vs adjectives
-            if (['다', '었', '았', '였', '겠'].includes(ending) || 
-                ending.includes('어') || ending.includes('아') || ending.includes('해')) {
-              verbs.push(stem + '다')
-            } else {
-              adjectives.push(stem + '다')
-            }
-            foundEnding = true
-            break
-          }
-        }
-      }
-    }
-    
-    // 🔧 FIX: Enhanced noun extraction with compound word patterns
+    // Enhanced noun extraction with compound word patterns
     if (/^[가-힣]{2,}$/.test(word)) {
       // Check if it's a pure noun (no particles/endings)
       if (!KOREAN_PARTICLES.some(p => word.endsWith(p)) && 
@@ -218,8 +186,81 @@ function extractKoreanKeywords(rawText: string): ExtractedKeywords {
         }
       }
     }
+  })
+  
+  return nouns
+}
+
+// Whitelist of verb-only endings to prevent adjective misclassification
+const KOREAN_VERB_ENDINGS = [
+  '다', '어다', '아다', '었다', '았다', '였다', '겠다',
+  '는다', '운다', '이다', '한다', '된다', '된다', '시다'
+]
+
+/**
+ * Extract and normalize verb stems from Korean text
+ */
+function extractVerbs(rawText: string, normalizedText: string): string[] {
+  const words = normalizedText.split(/\s+/).filter(word => word.length > 0)
+  const verbs: string[] = []
+  
+  words.forEach(word => {
+    if (KOREAN_STOPWORDS.includes(word)) return
     
-    // 🔧 FIX: Enhanced entity extraction
+    for (const ending of KOREAN_ENDINGS) {
+      if (word.endsWith(ending) && word.length > ending.length + 1) {
+        const stem = word.slice(0, -ending.length)
+        if (stem.length > 1) {
+          // Use whitelist approach to avoid misclassifying adjectives like '해롭다', '해양적이다'
+          if (KOREAN_VERB_ENDINGS.some(verbEnding => word.endsWith(verbEnding)) ||
+              (['다', '었', '았', '였', '겠'].includes(ending) && 
+               !word.includes('해롭') && !word.includes('해양') && !word.includes('해당'))) {
+            verbs.push(stem + '다')
+            break
+          }
+        }
+      }
+    }
+  })
+  
+  return verbs
+}
+
+/**
+ * Extract and normalize adjective stems from Korean text
+ */
+function extractAdjectives(rawText: string, normalizedText: string): string[] {
+  const words = normalizedText.split(/\s+/).filter(word => word.length > 0)
+  const adjectives: string[] = []
+  
+  words.forEach(word => {
+    if (KOREAN_STOPWORDS.includes(word)) return
+    
+    for (const ending of KOREAN_ENDINGS) {
+      if (word.endsWith(ending) && word.length > ending.length + 1) {
+        const stem = word.slice(0, -ending.length)
+        if (stem.length > 1) {
+          // Classify adjectives (not verbs)
+          if (!(['다', '었', '았', '였', '겠'].includes(ending) || 
+                ending.includes('어') || ending.includes('아') || ending.includes('해'))) {
+            adjectives.push(stem + '다')
+            break
+          }
+        }
+      }
+    }
+  })
+  
+  return adjectives
+}
+
+/**
+ * Extract entities using company/location/person heuristics
+ */
+function extractEntities(words: string[]): string[] {
+  const entities: string[] = []
+  
+  words.forEach(word => {
     if (word.length >= 2) {
       // Company patterns
       if (/[A-Z]/.test(word) || word.includes('㈜') || word.includes('(주)') || 
@@ -243,7 +284,13 @@ function extractKoreanKeywords(rawText: string): ExtractedKeywords {
     }
   })
   
-  // 🔧 FIX: Enhanced topic extraction with TF-IDF-like scoring
+  return entities
+}
+
+/**
+ * Extract topic keywords using frequency/position scoring
+ */
+function extractTopics(nouns: string[]): string[] {
   const wordFreq: Record<string, number> = {}
   const wordPositions: Record<string, number[]> = {}
   
@@ -281,50 +328,83 @@ function extractKoreanKeywords(rawText: string): ExtractedKeywords {
     .slice(0, 10)
     .map(([word]) => word as string)
   
-  topics.push(...sortedWords)
-  
-  // 🔧 FIX: Enhanced sentiment analysis with context awareness
+  return sortedWords
+}
+
+// Precompute RegExp patterns at module scope for efficiency
+const POSITIVE_PATTERNS = POSITIVE_WORDS.map(word => 
+  new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
+)
+const NEGATIVE_PATTERNS = NEGATIVE_WORDS.map(word => 
+  new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
+)
+
+/**
+ * Analyze sentiment with positive/negative scores and intensifiers
+ */
+function analyzeSentiment(normalizedText: string): 'positive' | 'negative' | 'neutral' | 'mixed' {
   let positiveScore = 0
   let negativeScore = 0
   
-  const textForSentiment = normalizedText
-  
-  // Helper function to escape regex special characters
-  const escapeRegExp = (string: string): string => {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  }
-  
-  POSITIVE_WORDS.forEach(word => {
-    const escapedWord = escapeRegExp(word)
-    const matches = (textForSentiment.match(new RegExp(escapedWord, 'g')) || []).length
+  // Use precompiled patterns for efficiency
+  POSITIVE_PATTERNS.forEach(pattern => {
+    const matches = (normalizedText.match(pattern) || []).length
     positiveScore += matches
   })
   
-  NEGATIVE_WORDS.forEach(word => {
-    const escapedWord = escapeRegExp(word)
-    const matches = (textForSentiment.match(new RegExp(escapedWord, 'g')) || []).length
+  NEGATIVE_PATTERNS.forEach(pattern => {
+    const matches = (normalizedText.match(pattern) || []).length
     negativeScore += matches
   })
   
   // Consider intensity modifiers
   const intensifiers = ['매우', '정말', '너무', '아주', '굉장히', '완전', '진짜', '대단히']
   intensifiers.forEach(intensifier => {
-    if (textForSentiment.includes(intensifier)) {
+    if (normalizedText.includes(intensifier)) {
       positiveScore *= 1.3
       negativeScore *= 1.3
     }
   })
   
-  let sentiment = 'neutral'
   const sentimentThreshold = 0.5
   
   if (positiveScore > negativeScore + sentimentThreshold) {
-    sentiment = 'positive'
+    return 'positive'
   } else if (negativeScore > positiveScore + sentimentThreshold) {
-    sentiment = 'negative'
+    return 'negative'
   } else if (positiveScore > 0 && negativeScore > 0) {
-    sentiment = 'mixed'
+    return 'mixed'
   }
+  
+  return 'neutral'
+}
+
+/**
+ * 🔧 FIX: Enhanced Korean morphological analysis with compound word handling
+ */
+function extractKoreanKeywords(rawText: string): ExtractedKeywords {
+  const language = detectLanguage(rawText)
+  const normalizedText = normalizeKoreanText(rawText)
+  const words = normalizedText.split(/\s+/).filter(word => word.length > 0)
+  
+  // Extract particles for completeness
+  const particles: string[] = []
+  words.forEach(word => {
+    for (const particle of KOREAN_PARTICLES) {
+      if (word.endsWith(particle) && word.length > particle.length + 1) {
+        particles.push(particle)
+        break
+      }
+    }
+  })
+  
+  // Use helper functions to extract different word types
+  const nouns = extractNouns(rawText, normalizedText)
+  const verbs = extractVerbs(rawText, normalizedText)
+  const adjectives = extractAdjectives(rawText, normalizedText)
+  const entities = extractEntities(words)
+  const topics = extractTopics(nouns)
+  const sentiment = analyzeSentiment(normalizedText)
   
   return {
     nouns: [...new Set(nouns)].filter(n => n.length > 1).slice(0, 20),
@@ -365,28 +445,76 @@ function extractEnglishKeywords(rawText: string): ExtractedKeywords {
 }
 
 /**
+ * Runtime validation for ExtractedKeywords
+ */
+function validateExtractedKeywords(data: unknown): data is ExtractedKeywords {
+  if (!data || typeof data !== 'object') return false
+  
+  const obj = data as Record<string, unknown>
+  
+  return (
+    Array.isArray(obj.nouns) && obj.nouns.every(n => typeof n === 'string') &&
+    Array.isArray(obj.verbs) && obj.verbs.every(v => typeof v === 'string') &&
+    Array.isArray(obj.adjectives) && obj.adjectives.every(a => typeof a === 'string') &&
+    Array.isArray(obj.particles) && obj.particles.every(p => typeof p === 'string') &&
+    Array.isArray(obj.entities) && obj.entities.every(e => typeof e === 'string') &&
+    Array.isArray(obj.topics) && obj.topics.every(t => typeof t === 'string') &&
+    typeof obj.sentiment === 'string' &&
+    typeof obj.language === 'string'
+  )
+}
+
+/**
+ * Safe fallback for ExtractedKeywords
+ */
+function createFallbackKeywords(language: string): ExtractedKeywords {
+  return {
+    nouns: [],
+    verbs: [],
+    adjectives: [],
+    particles: [],
+    entities: [],
+    topics: [],
+    sentiment: 'neutral',
+    language
+  }
+}
+
+/**
  * 텍스트에서 키워드와 인사이트 추출 (한국어 우선)
  */
 function extractKeywords(rawText: string): ExtractedKeywords {
   const language = detectLanguage(rawText)
   
+  let result: unknown
+  
   if (language === 'korean') {
     logger.info('Analyzing Korean text', { textLength: rawText.length })
-    return extractKoreanKeywords(rawText)
+    result = extractKoreanKeywords(rawText)
   } else {
     logger.info('Analyzing English text', { textLength: rawText.length })
-    return extractEnglishKeywords(rawText)
+    result = extractEnglishKeywords(rawText)
+  }
+
+  // Runtime validation
+  if (validateExtractedKeywords(result)) {
+    return result
+  } else {
+    logger.error('Invalid ExtractedKeywords result, using fallback', { result })
+    return createFallbackKeywords(language)
   }
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   return withMetrics(req, async () => {
     const { method } = req
 
-    // 🔧 FIX: Handle CORS preflight requests with dynamic origin-based headers
+    // Centralize origin and CORS headers extraction
+    const origin = req.headers.get('Origin')
+    const corsHeaders = getCorsHeaders(origin || undefined)
+
+    // Handle CORS preflight requests
     if (method === 'OPTIONS') {
-      const origin = req.headers.get('Origin')
-      const corsHeaders = getCorsHeaders(origin)
       return new Response(null, { status: 204, headers: corsHeaders })
     }
 
@@ -421,9 +549,7 @@ serve(async (req) => {
           
           console.log('📥 Received text body:', textBody)
           body = JSON.parse(textBody)
-        } catch (parseError) {
-          const origin = req.headers.get('Origin')
-          const corsHeaders = getCorsHeaders(origin)
+        } catch {
           return new Response(
             JSON.stringify({ 
               error: 'Invalid JSON in request body. Please provide valid JSON.',
@@ -437,10 +563,8 @@ serve(async (req) => {
         }
         const { rawText } = body
 
-        // 🔧 FIX: Enhanced input validation with dynamic CORS headers
+        // Enhanced input validation
         if (!rawText || typeof rawText !== 'string') {
-          const origin = req.headers.get('Origin')
-          const corsHeaders = getCorsHeaders(origin)
           return new Response(
             JSON.stringify({ 
               error: 'Missing or invalid rawText field. Must be a non-empty string.',
@@ -455,8 +579,6 @@ serve(async (req) => {
 
         const cleanText = rawText.trim()
         if (cleanText.length === 0) {
-          const origin = req.headers.get('Origin')
-          const corsHeaders = getCorsHeaders(origin)
           return new Response(
             JSON.stringify({ 
               error: 'Empty text after normalization. Please provide meaningful content.',
@@ -469,10 +591,8 @@ serve(async (req) => {
           )
         }
 
-        // 🔧 FIX: Text length validation (reasonable limits) with dynamic CORS headers
+        // Text length validation (reasonable limits)
         if (cleanText.length > 5000) {
-          const origin = req.headers.get('Origin')
-          const corsHeaders = getCorsHeaders(origin)
           return new Response(
             JSON.stringify({ 
               error: 'Text too long. Maximum length is 5000 characters.',
@@ -491,7 +611,7 @@ serve(async (req) => {
           textPreview: cleanText.substring(0, 100) + '...',
           detectedLanguage: detectLanguage(cleanText)
         })
-        const keywords = await measurePerformance('keyword_extraction', () => Promise.resolve(extractKeywords(cleanText)), {
+        const keywords: ExtractedKeywords = await measurePerformance('keyword_extraction', async () => extractKeywords(cleanText), {
           textLength: cleanText.length,
           language: detectLanguage(cleanText)
         })
@@ -537,8 +657,7 @@ serve(async (req) => {
           sentiment: keywords.sentiment
         })
 
-        const origin = req.headers.get('Origin')
-        const corsHeaders = getCorsHeaders(origin)
+        // CORS headers already declared at function start
         
         // Ensure UTF-8 encoding in response
         const responseData = JSON.stringify({ 
@@ -581,8 +700,7 @@ serve(async (req) => {
 
         logger.info('User inputs retrieved successfully', { count: data.length })
         
-        const origin = req.headers.get('Origin')
-        const corsHeaders = getCorsHeaders(origin)
+        // CORS headers already declared at function start
         return new Response(
           JSON.stringify({ 
             data,
@@ -593,8 +711,6 @@ serve(async (req) => {
         )
       }
 
-      const origin = req.headers.get('Origin')
-      const corsHeaders = getCorsHeaders(origin)
       return new Response(
         JSON.stringify({ 
           error: 'Method not allowed. Use POST to process text or GET to retrieve inputs.',
@@ -606,23 +722,22 @@ serve(async (req) => {
         }
       )
 
-    } catch (error) {
-      logger.error('Parse input function error', error, {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      logger.error('Parse input function error', error instanceof Error ? error : new Error(String(error)), {
         method,
         url: req.url,
         userAgent: req.headers.get('user-agent')
       })
       
       metrics.recordBusinessEvent('text_processing_error', 1, {
-        errorMessage: error.message,
+        errorMessage,
         method
       })
       
-      const origin = req.headers.get('Origin')
-      const corsHeaders = getCorsHeaders(origin)
       return new Response(
         JSON.stringify({ 
-          error: error.message || 'Internal server error',
+          error: errorMessage,
           success: false 
         }),
         { 

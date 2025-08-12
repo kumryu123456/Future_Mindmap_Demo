@@ -1,16 +1,19 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+// @ts-expect-error Deno std library types not available in current TypeScript config
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts"
 import { getCorsHeaders } from "../_shared/cors.js"
 import { getSupabaseClient } from "../_shared/supabase.js"
 import { rateLimit, addRateLimitHeaders } from "../_shared/rate-limiter.js"
 import { createLogger } from "../_shared/logger.js"
-import { metrics, withMetrics, measurePerformance } from "../_shared/metrics.js"
-import { insertMindmapNodeDirect, getMindmapNodesDirect } from "../_shared/direct-db.js"
+import { withMetrics } from "../_shared/metrics.js"
 
 const logger = createLogger('MindmapAPI')
 logger.info('Mindmap API Function initialized!')
 
+// 🔧 FIX: Extract UUID validation regex as constant
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 // Enhanced input validation functions
-function validateNodeInput(node: any, isPartialUpdate: boolean = false): { isValid: boolean; errors: string[] } {
+function validateNodeInput(node: Record<string, unknown>, isPartialUpdate: boolean = false): { isValid: boolean; errors: string[] } {
   const errors: string[] = []
   
   // Required fields validation (only for full creates, not partial updates)
@@ -54,7 +57,7 @@ function validateNodeInput(node: any, isPartialUpdate: boolean = false): { isVal
   if (node.parent_id !== undefined) {
     if (node.parent_id !== null && typeof node.parent_id !== 'string') {
       errors.push('parent_id must be a string or null')
-    } else if (node.parent_id && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(node.parent_id)) {
+    } else if (node.parent_id && !UUID_REGEX.test(node.parent_id)) {
       errors.push('parent_id must be a valid UUID')
     }
   }
@@ -62,18 +65,13 @@ function validateNodeInput(node: any, isPartialUpdate: boolean = false): { isVal
   return { isValid: errors.length === 0, errors }
 }
 
-/**
- * Detect if text contains Korean characters
- */
-function hasKoreanText(text: string): boolean {
-  return /[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]/g.test(text)
-}
+// Removed unused hasKoreanText function
 
 /**
  * Sanitize node input to prevent XSS and ensure data quality
  */
-function sanitizeNodeInput(node: any): any {
-  const sanitized: any = {}
+function sanitizeNodeInput(node: Record<string, unknown>): Record<string, unknown> {
+  const sanitized: Record<string, unknown> = {}
   
   // Sanitize title with UTF-8 preservation
   if (node.title !== undefined) {
@@ -111,7 +109,7 @@ function sanitizeNodeInput(node: any): any {
       sanitized.parent_id = null
     } else if (typeof node.parent_id === 'string' && node.parent_id.trim().length > 0) {
       // Validate UUID format
-      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(node.parent_id.trim())) {
+      if (UUID_REGEX.test(node.parent_id.trim())) {
         sanitized.parent_id = node.parent_id.trim()
       } else {
         sanitized.parent_id = null // Invalid UUID format
@@ -130,21 +128,25 @@ interface MindmapNode {
   content: string
   x: number
   y: number
-  parent_id?: string
+  parent_id?: string | null
+  level?: number
+  type?: string
   created_at?: string
   updated_at?: string
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   return withMetrics(req, async () => {
     const { method, url } = req
     const urlObj = new URL(url)
     const path = urlObj.pathname
+    
+    // Extract origin once at the top for reuse
+    const origin = req.headers.get('Origin') || undefined
+    const corsHeaders = getCorsHeaders(origin)
 
     // Handle CORS preflight requests with dynamic origin-based headers
     if (method === 'OPTIONS') {
-      const origin = req.headers.get('Origin')
-      const corsHeaders = getCorsHeaders(origin)
       return new Response('ok', { headers: corsHeaders })
     }
 
@@ -159,20 +161,13 @@ serve(async (req) => {
           return rateLimitResult.response!
         }
 
-        // 🔧 FIX: Use direct database operations for better UTF-8 handling in GET requests
-        let data, error
-        try {
-          data = await getMindmapNodesDirect()
-          error = null
-        } catch (directError) {
-          // Fallback to regular Supabase client
-          const result = await supabase
-            .from('mindmap_nodes')
-            .select('*')
-            .order('created_at', { ascending: false })
-          data = result.data
-          error = result.error
-        }
+        // Get all mindmap nodes
+        const result = await supabase
+          .from('mindmap_nodes')
+          .select('*')
+          .order('created_at', { ascending: false })
+        
+        const { data, error } = result
 
         if (error) {
           logger.error('Database error retrieving mindmap nodes', error)
@@ -181,8 +176,6 @@ serve(async (req) => {
 
         logger.info('Mindmap nodes retrieved successfully', { count: data.length })
         
-        const origin = req.headers.get('Origin')
-        const corsHeaders = getCorsHeaders(origin)
         const response = new Response(
           JSON.stringify({ 
             data,
@@ -211,8 +204,6 @@ serve(async (req) => {
         // Validate sanitized input
         const validation = validateNodeInput(sanitizedInput)
         if (!validation.isValid) {
-          const origin = req.headers.get('Origin')
-          const corsHeaders = getCorsHeaders(origin)
           return new Response(
             JSON.stringify({
               error: 'Validation failed',
@@ -226,39 +217,21 @@ serve(async (req) => {
           )
         }
 
-        // 🔧 FIX: Use direct database operations for Korean text to preserve UTF-8 encoding
-        let data, error
-        const hasKorean = hasKoreanText(sanitizedInput.title) || hasKoreanText(sanitizedInput.content || '')
+        // Insert new mindmap node
+        const result = await supabase
+          .from('mindmap_nodes')
+          .insert({
+            title: sanitizedInput.title,
+            content: sanitizedInput.content || '',
+            x: sanitizedInput.x || 0,
+            y: sanitizedInput.y || 0,
+            parent_id: sanitizedInput.parent_id || null,
+            level: sanitizedInput.level || 0,
+            type: sanitizedInput.type || 'default'
+          })
+          .select()
         
-        if (hasKorean) {
-          try {
-            data = await insertMindmapNodeDirect(
-              sanitizedInput.title,
-              sanitizedInput.content || '',
-              sanitizedInput.x || 0,
-              sanitizedInput.y || 0,
-              sanitizedInput.parent_id || null
-            )
-            error = null
-          } catch (directError) {
-            data = null
-            error = directError
-          }
-        } else {
-          // Use regular Supabase client for non-Korean text
-          const result = await supabase
-            .from('mindmap_nodes')
-            .insert({
-              title: sanitizedInput.title,
-              content: sanitizedInput.content || '',
-              x: sanitizedInput.x || 0,
-              y: sanitizedInput.y || 0,
-              parent_id: sanitizedInput.parent_id || null
-            })
-            .select()
-          data = result.data
-          error = result.error
-        }
+        const { data, error } = result
 
         if (error) {
           logger.error('Database error creating mindmap node', error)
@@ -271,8 +244,6 @@ serve(async (req) => {
           title: newNode.title 
         })
 
-        const origin = req.headers.get('Origin')
-        const corsHeaders = getCorsHeaders(origin)
         const response = new Response(
           JSON.stringify({ 
             data: newNode,
@@ -300,9 +271,7 @@ serve(async (req) => {
         const pathParts = path.split('/')
         const nodeId = pathParts[pathParts.length - 1]
 
-        if (!nodeId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(nodeId)) {
-          const origin = req.headers.get('Origin')
-          const corsHeaders = getCorsHeaders(origin)
+        if (!nodeId || !UUID_REGEX.test(nodeId)) {
           return new Response(
             JSON.stringify({
               error: 'Invalid or missing node ID in path',
@@ -323,8 +292,6 @@ serve(async (req) => {
         // Validate sanitized input (partial update)
         const validation = validateNodeInput(sanitizedInput, true)
         if (!validation.isValid) {
-          const origin = req.headers.get('Origin')
-          const corsHeaders = getCorsHeaders(origin)
           return new Response(
             JSON.stringify({
               error: 'Validation failed',
@@ -340,11 +307,27 @@ serve(async (req) => {
 
         // Prepare update data with sanitized values (only include fields that are present)
         const updateData: Partial<MindmapNode> = {}
-        if (sanitizedInput.title !== undefined) updateData.title = sanitizedInput.title
-        if (sanitizedInput.content !== undefined) updateData.content = sanitizedInput.content
-        if (sanitizedInput.x !== undefined) updateData.x = sanitizedInput.x
-        if (sanitizedInput.y !== undefined) updateData.y = sanitizedInput.y
-        if (sanitizedInput.parent_id !== undefined) updateData.parent_id = sanitizedInput.parent_id
+        if (sanitizedInput.title !== undefined && typeof sanitizedInput.title === 'string') {
+          updateData.title = sanitizedInput.title
+        }
+        if (sanitizedInput.content !== undefined && typeof sanitizedInput.content === 'string') {
+          updateData.content = sanitizedInput.content
+        }
+        if (sanitizedInput.x !== undefined && typeof sanitizedInput.x === 'number') {
+          updateData.x = sanitizedInput.x
+        }
+        if (sanitizedInput.y !== undefined && typeof sanitizedInput.y === 'number') {
+          updateData.y = sanitizedInput.y
+        }
+        if (sanitizedInput.parent_id !== undefined && (typeof sanitizedInput.parent_id === 'string' || sanitizedInput.parent_id === null)) {
+          updateData.parent_id = sanitizedInput.parent_id
+        }
+        if (sanitizedInput.level !== undefined && typeof sanitizedInput.level === 'number') {
+          updateData.level = sanitizedInput.level
+        }
+        if (sanitizedInput.type !== undefined && typeof sanitizedInput.type === 'string') {
+          updateData.type = sanitizedInput.type
+        }
 
         const { data, error } = await supabase
           .from('mindmap_nodes')
@@ -358,8 +341,6 @@ serve(async (req) => {
         }
 
         if (!data || data.length === 0) {
-          const origin = req.headers.get('Origin')
-          const corsHeaders = getCorsHeaders(origin)
           return new Response(
             JSON.stringify({
               error: 'Node not found',
@@ -378,8 +359,6 @@ serve(async (req) => {
           title: updatedNode.title 
         })
 
-        const origin = req.headers.get('Origin')
-        const corsHeaders = getCorsHeaders(origin)
         const response = new Response(
           JSON.stringify({ 
             data: updatedNode,
@@ -407,9 +386,7 @@ serve(async (req) => {
         const pathParts = path.split('/')
         const nodeId = pathParts[pathParts.length - 1]
 
-        if (!nodeId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(nodeId)) {
-          const origin = req.headers.get('Origin')
-          const corsHeaders = getCorsHeaders(origin)
+        if (!nodeId || !UUID_REGEX.test(nodeId)) {
           return new Response(
             JSON.stringify({
               error: 'Invalid or missing node ID in path',
@@ -434,8 +411,6 @@ serve(async (req) => {
         }
 
         if (!data || data.length === 0) {
-          const origin = req.headers.get('Origin')
-          const corsHeaders = getCorsHeaders(origin)
           return new Response(
             JSON.stringify({
               error: 'Node not found',
@@ -454,8 +429,6 @@ serve(async (req) => {
           title: deletedNode.title 
         })
 
-        const origin = req.headers.get('Origin')
-        const corsHeaders = getCorsHeaders(origin)
         return new Response(
           JSON.stringify({ 
             data: { id: deletedNode.id },
@@ -470,8 +443,6 @@ serve(async (req) => {
       }
 
       // Method not allowed
-      const origin = req.headers.get('Origin')
-      const corsHeaders = getCorsHeaders(origin)
       return new Response(
         JSON.stringify({ 
           error: 'Method not allowed. Use GET, POST, PUT, or DELETE.',
@@ -484,13 +455,11 @@ serve(async (req) => {
       )
 
     } catch (error) {
-      logger.error('Mindmap API error', error)
+      logger.error('Mindmap API error', error as Error)
       
-      const origin = req.headers.get('Origin')
-      const corsHeaders = getCorsHeaders(origin)
       return new Response(
         JSON.stringify({ 
-          error: error.message || 'Internal server error',
+          error: (error as Error).message || 'Internal server error',
           success: false 
         }),
         { 

@@ -8,7 +8,14 @@ const allowedOrigins = [
 
 // Add production origins from environment variable
 // 🔧 FIX: Trim origins and filter empty strings to avoid unwanted spaces
-const productionOrigins = Deno.env.get('ALLOWED_ORIGINS')?.split(',').map(o => o.trim()).filter(Boolean) || []
+interface DenoGlobal {
+  env?: {
+    get(key: string): string | undefined;
+  };
+}
+
+const deno = (globalThis as { Deno?: DenoGlobal }).Deno
+const productionOrigins = deno?.env?.get('ALLOWED_ORIGINS')?.split(',').map((o: string) => o.trim()).filter(Boolean) || []
 const allAllowedOrigins = [...allowedOrigins, ...productionOrigins]
 
 export function getCorsHeaders(origin?: string): Record<string, string> {
@@ -44,4 +51,12 @@ export function getCorsHeaders(origin?: string): Record<string, string> {
 // For backward compatibility, provide a helper function:
 export function getDefaultCorsHeaders(): Record<string, string> {
   return getCorsHeaders() // Returns appropriate headers based on no origin (wildcard)
+}
+
+// Helper function to get CORS headers with JSON Content-Type for API responses
+export function getCorsJsonHeaders(origin?: string): Record<string, string> {
+  return {
+    ...getCorsHeaders(origin),
+    'Content-Type': 'application/json'
+  }
 }

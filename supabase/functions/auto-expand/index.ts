@@ -1,5 +1,6 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { getCorsHeaders } from "../_shared/cors.js"
+// @ts-expect-error: Deno module resolution
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
+import { getCorsHeaders, getCorsJsonHeaders } from "../_shared/cors.js"
 import { getSupabaseClient } from "../_shared/supabase.js"
 import { rateLimit, addRateLimitHeaders } from "../_shared/rate-limiter.js"
 import { 
@@ -9,7 +10,8 @@ import {
   SimilarContent 
 } from "../_shared/embeddings.js"
 import { createLogger } from "../_shared/logger.js"
-import { metrics, withMetrics, measurePerformance } from "../_shared/metrics.js"
+import { DenoGlobal } from "../_shared/types.js"
+// Removed unused imports: metrics, withMetrics, measurePerformance
 
 const logger = createLogger('AutoExpand')
 logger.info('Auto-Expand Function initialized!')
@@ -46,8 +48,8 @@ interface AutoExpandResponse {
   parent_node: ParentNode
   similar_content: SimilarContent[]
   generated_children: ChildNodeSuggestion[]
-  expansion_context: Record<string, any>
-  created_mindmap_nodes?: any[]
+  expansion_context: Record<string, unknown>
+  created_mindmap_nodes?: unknown[]
   expansion_id: string
 }
 
@@ -131,7 +133,8 @@ async function generateChildNodes(
   maxChildren: number,
   expansionStyle: string = 'comprehensive'
 ): Promise<ChildNodeSuggestion[]> {
-  const openaiApiKey = Deno.env.get('OPENAI_API_KEY')
+  const deno = (globalThis as { Deno?: DenoGlobal }).Deno
+  const openaiApiKey = deno?.env?.get('OPENAI_API_KEY')
   
   if (!openaiApiKey) {
     throw new Error('OpenAI API key not configured')
@@ -180,8 +183,14 @@ async function generateChildNodes(
     const parsed = JSON.parse(content)
     return parsed.children || []
   } catch (error) {
-    console.error('Failed to parse OpenAI response as JSON:', content)
-    throw new Error(`Invalid JSON response from OpenAI: ${error.message}`)
+    const parseError = error instanceof Error ? error.message : 'Unknown parsing error'
+    const truncatedContent = content.length > 500 ? `${content.substring(0, 500)}...` : content
+    console.error('Failed to parse OpenAI response as JSON:', {
+      parseError,
+      responseContent: truncatedContent,
+      contentLength: content.length
+    })
+    throw new Error(`Invalid JSON response from OpenAI. Parse error: ${parseError}. Response content: ${truncatedContent}`)
   }
 }
 
@@ -218,14 +227,60 @@ function generateFallbackNodes(
   return children
 }
 
+// Shared response types to avoid duplication
+interface ErrorDetail {
+  message: string;
+  code?: string;
+  details?: string;
+}
+
+interface Response<T> {
+  data?: T;
+  error?: ErrorDetail;
+}
+
+// Generic query builder interface
+interface QueryBuilder<TData = unknown, TResult = Response<TData[]>> {
+  select(columns?: string): QueryBuilder<TData, TResult>;
+  eq(column: string, value: unknown): QueryBuilder<TData, TResult>;
+  in?(column: string, values: unknown[]): QueryBuilder<TData, TResult>;
+  order?(column: string, options?: { ascending?: boolean }): QueryBuilder<TData, TResult>;
+  limit?(count: number): QueryBuilder<TData, TResult>;
+  single?(): QueryBuilder<TData, Response<TData>>;
+  then<R1 = TResult, R2 = never>(
+    onfulfilled?: ((value: TResult) => R1 | PromiseLike<R1>) | null,
+    onrejected?: ((reason: unknown) => R2 | PromiseLike<R2>) | null
+  ): Promise<R1 | R2>;
+}
+
+// Simplified TypedSupabaseClient interface
+interface TypedSupabaseClient {
+  from(table: string): {
+    insert(data: unknown[] | Record<string, unknown>): QueryBuilder<unknown, Response<unknown[]>>;
+    select(columns?: string): QueryBuilder;
+    update(data: Record<string, unknown>): {
+      eq(column: string, value: unknown): QueryBuilder<unknown, Response<unknown[]>>;
+    };
+    delete(): {
+      eq(column: string, value: unknown): QueryBuilder<unknown, Response<unknown[]>>;
+    };
+    upsert(data: unknown[] | Record<string, unknown>, options?: { onConflict?: string }): QueryBuilder<unknown, Response<unknown[]>>;
+  };
+  rpc<T = unknown>(name: string, params?: Record<string, unknown>): Promise<Response<T>>;
+}
+
+function getTypedSupabaseClient(supabase: unknown): TypedSupabaseClient {
+  return supabase as TypedSupabaseClient;
+}
+
 /**
  * Create actual mindmap nodes from suggestions
  */
 async function createMindmapNodes(
-  supabase: any,
+  supabase: unknown,
   parentNodeId: string,
   childSuggestions: ChildNodeSuggestion[]
-): Promise<any[]> {
+): Promise<unknown[]> {
   const nodesToCreate = childSuggestions.map(child => ({
     title: child.title,
     content: child.content,
@@ -234,13 +289,27 @@ async function createMindmapNodes(
     parent_id: parentNodeId
   }))
 
-  const { data, error } = await supabase
+  const client = getTypedSupabaseClient(supabase);
+  
+  const { data, error } = await client
     .from('mindmap_nodes')
     .insert(nodesToCreate)
     .select()
 
   if (error) {
-    throw new Error(`Failed to create mindmap nodes: ${error.message}`)
+    // 🔧 FIX: Enhanced error handling with safe stringification
+    const errorDetails = {
+      message: String(error.message || 'Unknown error'),
+      code: String(error.code || 'UNKNOWN_ERROR'),
+      details: typeof error.details === 'object' ? JSON.stringify(error.details) : String(error.details || 'No additional details')
+    }
+    
+    console.error('Failed to create mindmap nodes:', {
+      ...errorDetails,
+      timestamp: new Date().toISOString(),
+      nodesToCreateCount: nodesToCreate.length
+    })
+    throw new Error(`Failed to create mindmap nodes: ${errorDetails.message} (Code: ${errorDetails.code})`)
   }
 
   return data || []
@@ -250,14 +319,16 @@ async function createMindmapNodes(
  * Store expansion history
  */
 async function storeExpansionHistory(
-  supabase: any,
+  supabase: unknown,
   parentNodeId: string,
   parentNodeType: string,
   similarContent: SimilarContent[],
   generatedChildren: ChildNodeSuggestion[],
-  expansionContext: Record<string, any>
+  expansionContext: Record<string, unknown>
 ): Promise<string> {
-  const { data, error } = await supabase
+  const client = getTypedSupabaseClient(supabase);
+  
+  const { data, error } = await client
     .from('node_expansions')
     .insert({
       parent_node_id: parentNodeId,
@@ -270,23 +341,37 @@ async function storeExpansionHistory(
       max_children: generatedChildren.length,
       llm_model: 'gpt-3.5-turbo'
     })
-    .select('id')
+    .select()
 
   if (error) {
-    console.error('Failed to store expansion history:', error)
-    return 'unknown'
+    // 🔧 FIX: Enhanced error logging with detailed error information
+    const errorDetails = {
+      message: error.message || 'Unknown error',
+      code: error.code || 'UNKNOWN_ERROR',
+      details: error.details || 'No additional details'
+    }
+    
+    console.error('Failed to store expansion history:', {
+      errorDetails,
+      timestamp: new Date().toISOString(),
+      parentNodeId,
+      parentNodeType
+    })
+    
+    // 🔧 FIX: Propagate the failure instead of returning 'unknown'
+    throw new Error(`Failed to store expansion history: ${errorDetails.message} (Code: ${errorDetails.code})`);
   }
 
-  return data?.[0]?.id || 'unknown'
+  return (data?.[0] as { id: string })?.id || 'unknown'
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   const { method } = req
+  const origin = req.headers.get('Origin') || undefined
+  const corsHeaders = getCorsHeaders(origin)
 
   // Handle CORS preflight requests
   if (method === 'OPTIONS') {
-    const origin = req.headers.get('Origin')
-    const corsHeaders = getCorsHeaders(origin)
     return new Response('ok', { headers: corsHeaders })
   }
 
@@ -319,7 +404,7 @@ serve(async (req) => {
           }),
           { 
             status: 400,
-            headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+            headers: getCorsJsonHeaders(req.headers.get('Origin') || undefined)
           }
         )
       }
@@ -340,7 +425,7 @@ serve(async (req) => {
           }),
           { 
             status: 404,
-            headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+            headers: getCorsJsonHeaders(req.headers.get('Origin') || undefined)
           }
         )
       }
@@ -372,7 +457,8 @@ serve(async (req) => {
           { title: parentNode.title, type: parentNodeType }
         )
       } catch (error) {
-        console.error('Failed to generate embedding:', error.message)
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        console.error('Failed to generate embedding:', errorMessage)
         // Continue without embeddings if generation fails
       }
 
@@ -392,7 +478,7 @@ serve(async (req) => {
           )
           console.log(`Found ${similarContent.length} similar content items`)
         } catch (error) {
-          console.error('Vector similarity search failed:', error.message)
+          console.error('Vector similarity search failed:', (error as Error).message)
           // Continue without similar content if search fails
         }
       }
@@ -412,7 +498,7 @@ serve(async (req) => {
           generationMethod = 'llm'
           console.log(`Generated ${childSuggestions.length} child suggestions using LLM`)
         } catch (error) {
-          console.error('LLM generation failed:', error.message)
+          console.error('LLM generation failed:', (error as Error).message)
           console.log('Falling back to rule-based generation')
         }
       }
@@ -425,12 +511,12 @@ serve(async (req) => {
       }
 
       // Create actual mindmap nodes
-      let createdNodes: any[] = []
+      let createdNodes: unknown[] = []
       try {
         createdNodes = await createMindmapNodes(supabase, parentNodeId, childSuggestions)
         console.log(`Created ${createdNodes.length} new mindmap nodes`)
       } catch (error) {
-        console.error('Failed to create mindmap nodes:', error.message)
+        console.error('Failed to create mindmap nodes:', (error as Error).message)
         // Return suggestions even if node creation fails
       }
 
@@ -497,7 +583,7 @@ serve(async (req) => {
       const { data, error } = await query
 
       if (error) {
-        throw new Error(`Failed to retrieve expansion history: ${error.message}`)
+        throw new Error(`Failed to retrieve expansion history: ${(error as Error).message}`)
       }
 
       return new Response(
@@ -521,11 +607,11 @@ serve(async (req) => {
       }
     )
 
-  } catch (error) {
-    console.error('Function error:', error)
+  } catch (error: unknown) {
+    console.error('Function error:', (error as Error).message)
     return new Response(
       JSON.stringify({ 
-        error: error.message || 'Internal server error',
+        error: (error as Error).message,
         success: false 
       }),
       { 

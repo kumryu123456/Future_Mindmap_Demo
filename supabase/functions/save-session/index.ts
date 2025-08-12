@@ -1,4 +1,5 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+// @ts-expect-error: Deno module resolution
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { getCorsHeaders } from "../_shared/cors.js"
 import { getSupabaseClient } from "../_shared/supabase.js"
 
@@ -12,14 +13,14 @@ interface MindmapNode {
   y: number
   selected?: boolean
   parent_id?: string
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 interface Connection {
   from: string
   to: string
   type: 'hierarchical' | 'associative' | 'dependency' | 'similarity'
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 interface ViewportState {
@@ -53,7 +54,7 @@ interface SessionData {
     timestamp: string
   } | null
   enriched_nodes?: string[]
-  session_metadata?: Record<string, any>
+  session_metadata?: Record<string, unknown>
 }
 
 interface SaveSessionRequest {
@@ -81,10 +82,60 @@ interface SessionResponse {
   updated_at: string
 }
 
+// Removed unused SaveSessionRequestSnake interface
+
+/**
+ * Enhanced input validation for save session requests
+ */
+function validateSaveSessionRequest(body: unknown): { isValid: boolean; errors: string[]; data?: SaveSessionRequest } {
+  const errors: string[] = []
+
+  if (!body || typeof body !== 'object') {
+    errors.push('Request body must be an object')
+    return { isValid: false, errors }
+  }
+
+  const requestBody = body as Record<string, unknown>
+  
+  // Support both camelCase and snake_case for compatibility
+  const sessionData = requestBody.sessionData || requestBody.session_data
+  if (!sessionData) {
+    errors.push('sessionData (or session_data) is required')
+    return { isValid: false, errors }
+  }
+
+  // Validate session data structure
+  const sessionValidation = validateSessionData(sessionData)
+  if (!sessionValidation.isValid) {
+    errors.push(...sessionValidation.errors.map(err => `sessionData: ${err}`))
+  }
+
+  // Validate viewportState if provided (camelCase or snake_case)
+  const viewportState = requestBody.viewportState || requestBody.viewport_state
+  if (viewportState) {
+    const viewportValidation = validateViewportState(viewportState)
+    if (!viewportValidation.isValid) {
+      errors.push(...viewportValidation.errors.map(err => `viewportState: ${err}`))
+    }
+  }
+
+  // Validate sessionId if provided (camelCase or snake_case)
+  const sessionId = requestBody.sessionId || requestBody.session_id
+  if (sessionId && typeof sessionId !== 'string') {
+    errors.push('sessionId must be a string if provided')
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    data: errors.length === 0 ? requestBody as unknown as SaveSessionRequest : undefined
+  }
+}
+
 /**
  * Validate session data structure
  */
-function validateSessionData(sessionData: any): { isValid: boolean; errors: string[] } {
+function validateSessionData(sessionData: unknown): { isValid: boolean; errors: string[] } {
   const errors: string[] = []
 
   if (!sessionData || typeof sessionData !== 'object') {
@@ -92,11 +143,13 @@ function validateSessionData(sessionData: any): { isValid: boolean; errors: stri
     return { isValid: false, errors }
   }
 
+  const sessionDataObj = sessionData as Record<string, unknown>
+  
   // Validate mindmap_nodes
-  if (!Array.isArray(sessionData.mindmap_nodes)) {
+  if (!Array.isArray(sessionDataObj.mindmap_nodes)) {
     errors.push('mindmap_nodes must be an array')
   } else {
-    sessionData.mindmap_nodes.forEach((node: any, index: number) => {
+    (sessionDataObj.mindmap_nodes as Array<Record<string, unknown>>).forEach((node: Record<string, unknown>, index: number) => {
       if (!node.id || typeof node.id !== 'string') {
         errors.push(`mindmap_nodes[${index}]: missing or invalid id`)
       }
@@ -110,21 +163,21 @@ function validateSessionData(sessionData: any): { isValid: boolean; errors: stri
   }
 
   // Validate connections
-  if (!Array.isArray(sessionData.connections)) {
+  if (!Array.isArray(sessionDataObj.connections)) {
     errors.push('connections must be an array')
   } else {
-    sessionData.connections.forEach((conn: any, index: number) => {
+    (sessionDataObj.connections as Array<Record<string, unknown>>).forEach((conn: Record<string, unknown>, index: number) => {
       if (!conn.from || !conn.to) {
         errors.push(`connections[${index}]: missing from or to field`)
       }
-      if (!['hierarchical', 'associative', 'dependency', 'similarity'].includes(conn.type)) {
+      if (typeof conn.type !== 'string' || !['hierarchical', 'associative', 'dependency', 'similarity'].includes(conn.type)) {
         errors.push(`connections[${index}]: invalid connection type`)
       }
     })
   }
 
   // Validate user_inputs
-  if (!Array.isArray(sessionData.user_inputs)) {
+  if (!Array.isArray(sessionDataObj.user_inputs)) {
     errors.push('user_inputs must be an array')
   }
 
@@ -134,17 +187,18 @@ function validateSessionData(sessionData: any): { isValid: boolean; errors: stri
 /**
  * Validate viewport state
  */
-function validateViewportState(viewportState: any): { isValid: boolean; errors: string[] } {
+function validateViewportState(viewportState: unknown): { isValid: boolean; errors: string[] } {
   const errors: string[] = []
 
   if (viewportState && typeof viewportState === 'object') {
-    if (typeof viewportState.zoom !== 'number' || viewportState.zoom <= 0) {
+    const viewportObj = viewportState as Record<string, unknown>
+    if (typeof viewportObj.zoom !== 'number' || (viewportObj.zoom as number) <= 0) {
       errors.push('viewport zoom must be a positive number')
     }
-    if (typeof viewportState.center_x !== 'number') {
+    if (typeof viewportObj.center_x !== 'number') {
       errors.push('viewport center_x must be a number')
     }
-    if (typeof viewportState.center_y !== 'number') {
+    if (typeof viewportObj.center_y !== 'number') {
       errors.push('viewport center_y must be a number')
     }
   }
@@ -164,7 +218,7 @@ function sanitizeSessionData(sessionData: SessionData): SessionData {
     sanitized.mindmap_nodes = sanitized.mindmap_nodes.map((node: MindmapNode) => ({
       id: String(node.id).trim(),
       title: String(node.title).trim().slice(0, 500), // Limit title length
-      content: String(node.content).trim().slice(0, 5000), // Limit content length
+      content: (node.content !== undefined ? String(node.content) : '').trim().slice(0, 5000), // Avoid "undefined" string
       x: Number(node.x) || 0,
       y: Number(node.y) || 0,
       selected: Boolean(node.selected),
@@ -246,12 +300,12 @@ function calculateExpirationDate(expiresInDays: number = 30): string {
   return expirationDate.toISOString()
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   const { method } = req
 
   // Handle CORS preflight requests
   if (method === 'OPTIONS') {
-    const origin = req.headers.get('Origin')
+    const origin = req.headers.get('Origin') || undefined
     const corsHeaders = getCorsHeaders(origin)
     return new Response('ok', { headers: corsHeaders })
   }
@@ -260,81 +314,45 @@ serve(async (req) => {
 
   try {
     if (method === 'POST') {
-      const body: SaveSessionRequest = await req.json()
-      const { 
-        sessionId,
-        userId = null,
-        sessionName,
-        sessionData,
-        viewportState,
-        uiPreferences,
-        expiresInDays = 30
-      } = body
-
-      // Validate required fields
-      if (!sessionId || typeof sessionId !== 'string' || sessionId.trim().length === 0) {
+      const requestBody = await req.json()
+      
+      // Use the validateSaveSessionRequest function
+      const validation = validateSaveSessionRequest(requestBody)
+      if (!validation.isValid) {
         return new Response(
           JSON.stringify({ 
-            error: 'sessionId is required and must be a non-empty string',
+            error: 'Validation failed',
+            details: validation.errors,
             success: false 
           }),
           { 
             status: 400,
-            headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+            headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" }
           }
         )
       }
 
-      if (!sessionData) {
-        return new Response(
-          JSON.stringify({ 
-            error: 'sessionData is required',
-            success: false 
-          }),
-          { 
-            status: 400,
-            headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
-          }
-        )
-      }
+      // Use validated data from validateSaveSessionRequest
+      const validatedData = validation.data!
+      const requestRecord = requestBody as Record<string, unknown>
+      
+      // Extract session parameters (supporting both camelCase and snake_case with nullish coalescing)
+      const sessionData = validatedData.sessionData
+      const viewportState = validatedData.viewportState ?? (requestRecord.viewport_state as ViewportState | undefined)
+      
+      // Fix field extraction to handle both camelCase and snake_case with nullish coalescing
+      const sessionId = validatedData.sessionId ?? (requestRecord.session_id as string) ?? 'default-session'
+      const userId = validatedData.userId ?? (requestRecord.user_id as string | null) ?? null
+      const sessionName = validatedData.sessionName ?? (requestRecord.session_name as string) ?? 'Unnamed Session'
+      const uiPreferences = validatedData.uiPreferences ?? (requestRecord.ui_preferences as object) ?? {}
+      const expiresInDays = validatedData.expiresInDays ?? (requestRecord.expires_in_days as number) ?? 30
 
-      // Validate session data structure
-      const sessionValidation = validateSessionData(sessionData)
-      if (!sessionValidation.isValid) {
-        return new Response(
-          JSON.stringify({ 
-            error: 'Invalid session data structure',
-            validation_errors: sessionValidation.errors,
-            success: false 
-          }),
-          { 
-            status: 400,
-            headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
-          }
-        )
-      }
-
-      // Validate viewport state if provided
-      if (viewportState) {
-        const viewportValidation = validateViewportState(viewportState)
-        if (!viewportValidation.isValid) {
-          return new Response(
-            JSON.stringify({ 
-              error: 'Invalid viewport state',
-              validation_errors: viewportValidation.errors,
-              success: false 
-            }),
-            { 
-              status: 400,
-              headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
-            }
-          )
-        }
-      }
+      // Note: validateSaveSessionRequest already validates sessionData and viewportState,
+      // so we don't need duplicate validation here
 
       console.log(`Saving session: ${sessionId}`)
 
-      // Sanitize and prepare data
+      // Sanitize and prepare data (no cast needed - already validated)
       const sanitizedSessionData = sanitizeSessionData(sessionData)
       const finalViewportState = viewportState ? { ...getDefaultViewportState(), ...viewportState } : getDefaultViewportState()
       const finalUIPreferences = uiPreferences ? { ...getDefaultUIPreferences(), ...uiPreferences } : getDefaultUIPreferences()
@@ -370,7 +388,7 @@ serve(async (req) => {
           }),
           { 
             status: 500,
-            headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+            headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" }
           }
         )
       }
@@ -385,7 +403,7 @@ serve(async (req) => {
         }),
         { 
           status: 200,
-          headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+          headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" }
         }
       )
     }
@@ -434,7 +452,7 @@ serve(async (req) => {
           }),
           { 
             status: 500,
-            headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+            headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" }
           }
         )
       }
@@ -447,7 +465,7 @@ serve(async (req) => {
             data: session,
             success: true 
           }),
-          { headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
+          { headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" } }
         )
       }
 
@@ -457,7 +475,7 @@ serve(async (req) => {
           count: data.length,
           success: true 
         }),
-        { headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
+        { headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" } }
       )
     }
 
@@ -481,7 +499,7 @@ serve(async (req) => {
             }),
             { 
               status: 500,
-              headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+              headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" }
             }
           )
         }
@@ -491,7 +509,7 @@ serve(async (req) => {
             success: true,
             message: 'Expired sessions cleaned up successfully'
           }),
-          { headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
+          { headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" } }
         )
       }
 
@@ -503,7 +521,7 @@ serve(async (req) => {
           }),
           { 
             status: 400,
-            headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+            headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" }
           }
         )
       }
@@ -527,7 +545,7 @@ serve(async (req) => {
           }),
           { 
             status: 500,
-            headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+            headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" }
           }
         )
       }
@@ -537,7 +555,7 @@ serve(async (req) => {
           success: true,
           message: 'Session(s) deleted successfully'
         }),
-        { headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" } }
+        { headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" } }
       )
     }
 
@@ -548,7 +566,7 @@ serve(async (req) => {
       }),
       { 
         status: 405,
-        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+        headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" }
       }
     )
 
@@ -556,12 +574,12 @@ serve(async (req) => {
     console.error('Function error:', error)
     return new Response(
       JSON.stringify({ 
-        error: error.message || 'Internal server error',
+        error: (error as Error).message || 'Internal server error',
         success: false 
       }),
       { 
         status: 500,
-        headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+        headers: { ...getCorsHeaders(req.headers.get('Origin') || undefined), "Content-Type": "application/json" }
       }
     )
   }

@@ -1,10 +1,34 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+// @ts-expect-error Deno std library types not available in current TypeScript config
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { getCorsHeaders } from "../_shared/cors.js"
 import { getSupabaseClient } from "../_shared/supabase.js"
 import { generateEmbedding, findSimilarContent } from "../_shared/embeddings.js"
 import { createLogger } from "../_shared/logger.js"
+import { DenoGlobal } from "../_shared/types.js"
 
 const logger = createLogger('SmartExpand')
+
+/**
+ * RAG item interface for type-safe handling of similar content
+ */
+interface RagItem {
+  content_text: string
+  similarity_score: number
+  content_type: string
+}
+
+/**
+ * Type guard to validate RAG items
+ */
+function isRagItem(item: unknown): item is RagItem {
+  return (
+    item !== null &&
+    typeof item === 'object' &&
+    typeof (item as Record<string, unknown>).content_text === 'string' &&
+    typeof (item as Record<string, unknown>).similarity_score === 'number' &&
+    typeof (item as Record<string, unknown>).content_type === 'string'
+  )
+}
 
 interface SmartExpandRequest {
   nodeTitle: string
@@ -30,7 +54,7 @@ interface SmartExpandResponse {
     confidence: number
     ragSource?: string
   }>
-  ragContext?: any[]
+  ragContext?: unknown[]
   expansionMetadata: {
     style: string
     ragUsed: boolean
@@ -44,7 +68,7 @@ interface SmartExpandResponse {
  */
 async function performSmartExpansion(
   request: SmartExpandRequest,
-  supabase: any
+  supabase: unknown
 ): Promise<SmartExpandResponse> {
   const {
     nodeTitle,
@@ -56,8 +80,8 @@ async function performSmartExpansion(
     useRAG = true
   } = request
 
-  let ragContext: any[] = []
-  let similarContent: any[] = []
+  let ragContext: unknown[] = []
+  let similarContent: unknown[] = []
 
   // Step 1: RAG - Find similar content if enabled
   if (useRAG) {
@@ -75,21 +99,23 @@ async function performSmartExpansion(
         }
       )
       
-      ragContext = similarContent.map(item => ({
-        content: item.content_text,
-        similarity: item.similarity_score,
-        type: item.content_type
-      }))
+      ragContext = (similarContent as unknown[])
+        .filter(isRagItem)
+        .map(item => ({
+          content: item.content_text,
+          similarity: item.similarity_score,
+          type: item.content_type
+        }))
       
       logger.info(`Found ${ragContext.length} similar items via RAG`)
     } catch (error) {
-      logger.error('RAG search failed:', error)
+      logger.error('RAG search failed:', error as Error)
     }
   }
 
   // Step 2: Build enriched prompt with RAG context
   const ragContextText = ragContext.length > 0
-    ? `\n\n관련 정보 (RAG):\n${ragContext.slice(0, 5).map(r => `- ${r.content} (유사도: ${r.similarity.toFixed(2)})`).join('\n')}`
+    ? `\n\n관련 정보 (RAG):\n${(ragContext as Array<{content: string; similarity: number}>).slice(0, 5).map(r => `- ${r.content} (유사도: ${r.similarity.toFixed(2)})`).join('\n')}`
     : ''
 
   const styleInstructions = {
@@ -132,7 +158,8 @@ ${styleInstructions[expansionStyle]}
 }`
 
   // Step 3: Call OpenAI for generation
-  const openaiApiKey = Deno.env.get('OPENAI_API_KEY')
+  const deno = (globalThis as { Deno?: DenoGlobal }).Deno
+  const openaiApiKey = deno?.env?.get('OPENAI_API_KEY')
   
   if (!openaiApiKey) {
     // Fallback to rule-based generation
@@ -173,7 +200,7 @@ ${styleInstructions[expansionStyle]}
 
     // Add RAG source information if available
     if (ragContext.length > 0) {
-      parsed.suggestions = parsed.suggestions.map((s: any) => ({
+      parsed.suggestions = parsed.suggestions.map((s: Record<string, unknown>) => ({
         ...s,
         ragSource: 'RAG-enhanced generation'
       }))
@@ -191,7 +218,7 @@ ${styleInstructions[expansionStyle]}
     }
 
   } catch (error) {
-    logger.error('OpenAI generation failed:', error)
+    logger.error('OpenAI generation failed:', error as Error)
     return generateFallbackSuggestions(nodeTitle, nodeContent, expansionStyle, maxChildren, ragContext)
   }
 }
@@ -204,13 +231,20 @@ function generateFallbackSuggestions(
   nodeContent: string,
   style: string,
   maxChildren: number,
-  ragContext: any[]
+  ragContext: unknown[]
 ): SmartExpandResponse {
-  const suggestions: any[] = []
+  const suggestions: Array<{
+    title: string
+    content: string
+    reasoning: string
+    priority: number
+    confidence: number
+    ragSource?: string
+  }> = []
   
   // Use RAG context if available
   if (ragContext.length > 0) {
-    ragContext.slice(0, maxChildren).forEach((item, i) => {
+    (ragContext as Array<{content: string; similarity: number}>).slice(0, maxChildren).forEach((item, i) => {
       suggestions.push({
         title: `${nodeTitle} - 연관 ${i + 1}`,
         content: item.content,
@@ -245,9 +279,9 @@ function generateFallbackSuggestions(
   }
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   const { method } = req
-  const origin = req.headers.get('Origin')
+  const origin = req.headers.get('Origin') || undefined
   const corsHeaders = getCorsHeaders(origin)
 
   if (method === 'OPTIONS') {
@@ -281,12 +315,12 @@ serve(async (req) => {
     )
     
   } catch (error) {
-    logger.error('Smart expansion error:', error)
+    logger.error('Smart expansion error:', error as Error)
     
     return new Response(
       JSON.stringify({
         success: false,
-        error: error.message || 'Internal server error'
+        error: (error as Error).message || 'Internal server error'
       }),
       {
         status: 500,

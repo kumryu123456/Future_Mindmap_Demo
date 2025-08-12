@@ -1,9 +1,11 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+// @ts-expect-error Deno std library types not available in current TypeScript config
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts"
 import { getCorsHeaders } from "../_shared/cors.js"
 import { getSupabaseClient } from "../_shared/supabase.js"
 import { rateLimit, addRateLimitHeaders } from "../_shared/rate-limiter.js"
 import { createLogger } from "../_shared/logger.js"
-import { metrics, withMetrics, measurePerformance } from "../_shared/metrics.js"
+// Removed unused imports: metrics, withMetrics, measurePerformance
+import { DenoGlobal, SimpleOpenAIResponse } from "../_shared/types.js"
 
 const logger = createLogger('GeneratePlan')
 logger.info('Generate Plan Function initialized!')
@@ -61,7 +63,7 @@ interface GeneratedPlan {
 function buildPlanGenerationPrompt(
   userInput: string,
   keywords: string[],
-  enterpriseData: any[]
+  enterpriseData: Array<{ title: string; description: string; relevance_score: number; source?: string }>
 ): string {
   const enterpriseContext = enterpriseData
     .slice(0, 10) // Limit to top 10 most relevant
@@ -164,8 +166,9 @@ Return only valid JSON without any markdown formatting or additional text.`
 /**
  * Call OpenAI API to generate plan
  */
-async function generatePlanWithOpenAI(prompt: string): Promise<any> {
-  const openaiApiKey = Deno.env.get('OPENAI_API_KEY')
+async function generatePlanWithOpenAI(prompt: string): Promise<unknown> {
+  const deno = (globalThis as { Deno?: DenoGlobal }).Deno
+  const openaiApiKey = deno?.env?.get('OPENAI_API_KEY')
   
   if (!openaiApiKey) {
     throw new Error('OpenAI API key not configured. Please set OPENAI_API_KEY environment variable.')
@@ -200,9 +203,9 @@ async function generatePlanWithOpenAI(prompt: string): Promise<any> {
     throw new Error(`OpenAI API error: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`)
   }
 
-  const data = await response.json()
+  const data = await response.json() as SimpleOpenAIResponse
   
-  if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+  if (!data.choices?.[0]?.message?.content) {
     throw new Error('Invalid response structure from OpenAI API')
   }
 
@@ -212,48 +215,56 @@ async function generatePlanWithOpenAI(prompt: string): Promise<any> {
     return JSON.parse(content)
   } catch (error) {
     console.error('Failed to parse OpenAI response as JSON:', content)
-    throw new Error(`Invalid JSON response from OpenAI: ${error.message}`)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown parsing error'
+    throw new Error(`Invalid JSON response from OpenAI: ${errorMessage}`)
   }
 }
 
 /**
  * Validate generated plan structure
  */
-function validatePlanStructure(plan: any): { isValid: boolean; errors: string[] } {
+function validatePlanStructure(plan: unknown): { isValid: boolean; errors: string[] } {
   const errors: string[] = []
+  
+  if (!plan || typeof plan !== 'object') {
+    errors.push('Plan must be an object')
+    return { isValid: false, errors }
+  }
+  
+  const planObj = plan as Record<string, unknown>
 
-  if (!plan.title || typeof plan.title !== 'string') {
+  if (!planObj.title || typeof planObj.title !== 'string') {
     errors.push('Plan must have a valid title')
   }
 
-  if (!plan.description || typeof plan.description !== 'string') {
+  if (!planObj.description || typeof planObj.description !== 'string') {
     errors.push('Plan must have a valid description')
   }
 
-  if (!plan.objective || typeof plan.objective !== 'string') {
+  if (!planObj.objective || typeof planObj.objective !== 'string') {
     errors.push('Plan must have a valid objective')
   }
 
-  if (!Array.isArray(plan.plan_structure)) {
+  if (!Array.isArray(planObj.plan_structure)) {
     errors.push('Plan must have a plan_structure array')
   } else {
     // Validate each node in the structure
-    plan.plan_structure.forEach((node: any, index: number) => {
+    (planObj.plan_structure as Array<Record<string, unknown>>).forEach((node: Record<string, unknown>, index: number) => {
       if (!node.id || !node.title || !node.type) {
         errors.push(`Plan node ${index + 1} missing required fields (id, title, type)`)
       }
       
-      if (!['goal', 'milestone', 'task', 'subtask', 'resource'].includes(node.type)) {
+      if (!['goal', 'milestone', 'task', 'subtask', 'resource'].includes(node.type as string)) {
         errors.push(`Plan node ${index + 1} has invalid type: ${node.type}`)
       }
 
-      if (!['low', 'medium', 'high', 'critical'].includes(node.priority)) {
+      if (!['low', 'medium', 'high', 'critical'].includes(node.priority as string)) {
         errors.push(`Plan node ${index + 1} has invalid priority: ${node.priority}`)
       }
     })
   }
 
-  if (!plan.metadata || typeof plan.metadata !== 'object') {
+  if (!planObj.metadata || typeof planObj.metadata !== 'object') {
     errors.push('Plan must have valid metadata object')
   }
 
@@ -349,13 +360,13 @@ function generateFallbackPlan(userInput: string, keywords: string[]): GeneratedP
   }
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   const { method } = req
+  const origin = req.headers.get('Origin') || undefined
+  const corsHeaders = getCorsHeaders(origin)
 
   // Handle CORS preflight requests
   if (method === 'OPTIONS') {
-    const origin = req.headers.get('Origin')
-    const corsHeaders = getCorsHeaders(origin)
     return new Response('ok', { headers: corsHeaders })
   }
 
@@ -386,7 +397,7 @@ serve(async (req) => {
           }),
           { 
             status: 400,
-            headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+            headers: { ...corsHeaders, "Content-Type": "application/json" }
           }
         )
       }
@@ -413,18 +424,34 @@ serve(async (req) => {
           }
 
           // Prepare the complete plan object
+          const openAIResult = openaiResponse as Record<string, unknown>
           generatedPlan = {
-            ...openaiResponse,
+            id: typeof openAIResult.id === 'string' ? openAIResult.id : undefined,
+            title: typeof openAIResult.title === 'string' ? openAIResult.title : 'Generated Plan',
+            description: typeof openAIResult.description === 'string' ? openAIResult.description : 'AI-generated plan based on your input',
+            objective: typeof openAIResult.objective === 'string' ? openAIResult.objective : 'Accomplish the goals outlined in your input',
+            plan_structure: Array.isArray(openAIResult.plan_structure) ? openAIResult.plan_structure as PlanNode[] : [],
+            metadata: typeof openAIResult.metadata === 'object' && openAIResult.metadata ? 
+              openAIResult.metadata as GeneratedPlan['metadata'] : {
+                total_estimated_duration: '4 weeks',
+                complexity_score: 5,
+                confidence_score: 7,
+                risk_assessment: 'Medium risk',
+                success_metrics: ['Plan completion', 'Goal achievement']
+              },
             context: {
               keywords,
-              enterprise_data_sources: enterpriseData.map(item => item.source).filter(Boolean),
+              enterprise_data_sources: enterpriseData
+                .map(item => item.source)
+                .filter((source): source is string => Boolean(source)),
               user_input: userInput
             },
             generated_at: new Date().toISOString()
           }
 
         } catch (error) {
-          console.error('OpenAI plan generation failed:', error.message)
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+          console.error('OpenAI plan generation failed:', errorMessage)
           console.log('Falling back to automated plan generation')
           
           // Use fallback plan
@@ -465,7 +492,7 @@ serve(async (req) => {
           }),
           { 
             status: 200,
-            headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+            headers: { ...corsHeaders, "Content-Type": "application/json" }
           }
         )
       }
@@ -481,7 +508,7 @@ serve(async (req) => {
         }),
         { 
           status: 201,
-          headers: { ...getCorsHeaders(req.headers.get('Origin')), "Content-Type": "application/json" }
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
         }
       )
       
@@ -537,7 +564,7 @@ serve(async (req) => {
     console.error('Function error:', error)
     return new Response(
       JSON.stringify({ 
-        error: error.message || 'Internal server error',
+        error: error instanceof Error ? error.message : 'Internal server error',
         success: false 
       }),
       { 

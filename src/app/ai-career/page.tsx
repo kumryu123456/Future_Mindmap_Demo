@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -9,77 +9,43 @@ import {
   applyEdgeChanges,
   addEdge,
   Edge,
-  Node,
   OnNodesChange,
   OnEdgesChange,
   OnConnect,
+  NodeTypes,
+  Background,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Star, Menu } from "lucide-react";
+import { Plus, Star } from "lucide-react";
 import { mockCareerMaps, type CareerMap } from "@/lib/career-map-types";
+import { CurrentNode } from "@/nodes/CurrentNode";
+import {
+  IntermediateNode,
+  IntermediateNodeData,
+} from "@/nodes/IntermediateNode";
+import { FinalNode } from "@/nodes/FinalNode";
+import { NodeData } from "@/nodes/type";
 
-// ReactFlow node styling based on type
-const nodeTypes = {
-  current: {
-    style: {
-      background: "#1E40AF",
-      color: "white",
-      border: "2px solid #1E40AF",
-      borderRadius: "50%",
-      width: 120,
-      height: 120,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontSize: 14,
-      fontWeight: "bold",
-      textAlign: "center",
-    },
-  },
-  intermediate: {
-    style: {
-      background: "#F3F4F6",
-      color: "#374151",
-      border: "2px solid #D1D5DB",
-      borderRadius: "20px",
-      width: 110,
-      height: 60,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontSize: 12,
-      fontWeight: "medium",
-      textAlign: "center",
-    },
-  },
-  final: {
-    style: {
-      background: "#7DD3FC",
-      color: "#0F172A",
-      border: "2px solid #0EA5E9",
-      borderRadius: "20px",
-      width: 130,
-      height: 70,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontSize: 14,
-      fontWeight: "bold",
-      textAlign: "center",
-    },
-  },
+// ReactFlow node types
+const nodeTypes: NodeTypes = {
+  current: CurrentNode,
+  intermediate: IntermediateNode,
+  final: FinalNode,
 };
 
 export default function AICareerPage() {
   const router = useRouter();
   const [careerMaps] = useState<CareerMap[]>(mockCareerMaps);
+  const [selectedNode, setSelectedNode] = useState<IntermediateNodeData | null>(
+    null,
+  );
   const [selectedMapId, setSelectedMapId] = useState<string | null>(null);
-  const [nodes, setNodes] = useState<Node[]>([]);
+  const [nodes, setNodes] = useState<NodeData[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
 
   // Redirect to onboarding if no career maps
   useEffect(() => {
@@ -101,12 +67,7 @@ export default function AICareerPage() {
     const selectedMap = careerMaps.find((map) => map.id === selectedMapId);
     if (!selectedMap) return;
 
-    const flowNodes = selectedMap.info.roadmapSteps.map((step) => ({
-      id: step.id,
-      position: step.position,
-      data: { label: step.title },
-      style: nodeTypes[step.type]?.style,
-    }));
+    const flowNodes = selectedMap.nodes;
 
     const flowEdges: Edge[] = [];
     // Add edges connecting the nodes (simplified logic)
@@ -126,7 +87,7 @@ export default function AICareerPage() {
     setEdges(flowEdges);
   }, [selectedMapId, careerMaps]);
 
-  const onNodesChange: OnNodesChange = useCallback(
+  const onNodesChange: OnNodesChange<NodeData> = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
     [],
   );
@@ -140,6 +101,11 @@ export default function AICareerPage() {
     (params) => setEdges((eds) => addEdge(params, eds)),
     [],
   );
+
+  const onNodeClick = useCallback((event: React.MouseEvent, node: NodeData) => {
+    if (node.type === "intermediate")
+      setSelectedNode(node as IntermediateNodeData);
+  }, []);
 
   const selectedMap = careerMaps.find((map) => map.id === selectedMapId);
 
@@ -197,14 +163,19 @@ export default function AICareerPage() {
             {selectedMap && (
               <div className="m-6 flex-1 border border-gray-200 rounded-lg overflow-hidden">
                 <ReactFlow
+                  ref={ref}
                   nodes={nodes}
                   edges={edges}
                   onNodesChange={onNodesChange}
                   onEdgesChange={onEdgesChange}
                   onConnect={onConnect}
+                  onNodeClick={onNodeClick}
+                  nodeTypes={nodeTypes}
                   fitView
                   className="bg-white"
-                />
+                >
+                  <Background />
+                </ReactFlow>
               </div>
             )}
             <div className="p-6 border-t border-gray-200 bg-white">
@@ -220,105 +191,208 @@ export default function AICareerPage() {
             </div>
           </div>
 
-          {selectedMap && (
+          {selectedNode && (
             <Tabs
               defaultValue="info"
               className="w-80 h-full flex flex-col border-l"
             >
-              <TabsList className="w-full h-24 p-0">
-                <TabsTrigger value="info">정보</TabsTrigger>
-                <TabsTrigger value="reviews">후기</TabsTrigger>
-              </TabsList>
+              <div className="p-6">
+                <h2 className="text-lg font-bold mb-4">
+                  {selectedNode.data.label}
+                </h2>
+                <TabsList className="w-full p-1 h-12">
+                  <TabsTrigger value="info">정보</TabsTrigger>
+                  <TabsTrigger value="reviews">후기</TabsTrigger>
+                </TabsList>
+              </div>
 
               <TabsContent
                 value="info"
                 className="flex-1 p-6 min-h-0 overflow-y-auto space-y-8"
               >
-                {/* Certification Info */}
-                <div>
-                  <h3 className="text-2xl font-bold mb-6">
-                    {selectedMap.info.certification.name}
-                  </h3>
-
-                  <ul className="space-y-3 text-sm mb-8">
-                    <li className="flex">
-                      <span className="w-2 h-2 bg-black rounded-full mt-2 mr-3 flex-shrink-0"></span>
-                      <span>
-                        <strong>난이도:</strong>{" "}
-                        {selectedMap.info.certification.difficulty}
-                      </span>
-                    </li>
-                    <li className="flex">
-                      <span className="w-2 h-2 bg-black rounded-full mt-2 mr-3 flex-shrink-0"></span>
-                      <span>
-                        <strong>응시 자격:</strong>{" "}
-                        {selectedMap.info.certification.eligibility}
-                      </span>
-                    </li>
-                    <li className="flex">
-                      <span className="w-2 h-2 bg-black rounded-full mt-2 mr-3 flex-shrink-0"></span>
-                      <span>
-                        <strong>시험 구성:</strong>{" "}
-                        {selectedMap.info.certification.examStructure}
-                      </span>
-                    </li>
-                    <li className="flex">
-                      <span className="w-2 h-2 bg-black rounded-full mt-2 mr-3 flex-shrink-0"></span>
-                      <span>
-                        <strong>시험 일정:</strong>{" "}
-                        {selectedMap.info.certification.schedule}
-                      </span>
-                    </li>
-                  </ul>
-
-                  {/* Recommended Books */}
-                  <div className="mb-8">
-                    <h4 className="text-lg font-bold mb-4">추천 교재</h4>
-                    <div className="space-y-4">
-                      {selectedMap.info.certification.recommendedBooks.map(
-                        (book, index) => (
-                          <div key={index}>
-                            <p className="font-medium">
-                              ({book.category === "written" ? "필기" : "실기"})
-                              <span className="underline ml-1">
-                                {book.title}
-                              </span>
-                            </p>
-                            <p className="text-sm text-gray-600 mt-1">
-                              → {book.description}
-                            </p>
-                          </div>
-                        ),
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Recommended Courses */}
+                {/* Skill Info */}
+                {selectedNode.data.info.skillInfo && (
                   <div>
-                    <h4 className="text-lg font-bold mb-4">추천 온라인 강의</h4>
+                    <h3 className="text-xl font-bold mb-4">학습 정보</h3>
+
                     <div className="space-y-4">
-                      {selectedMap.info.certification.recommendedCourses.map(
-                        (course, index) => (
-                          <div key={index}>
-                            <p className="font-medium underline">
-                              {course.title}
-                            </p>
-                            <p className="text-sm text-gray-600 mt-1">
-                              → {course.description}
-                            </p>
+                      <div>
+                        <h4 className="font-semibold text-gray-900 mb-2">
+                          설명
+                        </h4>
+                        <p className="text-sm text-gray-700">
+                          {selectedNode.data.info.skillInfo.description}
+                        </p>
+                      </div>
+
+                      <div>
+                        <h4 className="font-semibold text-gray-900 mb-2">
+                          난이도
+                        </h4>
+                        <span className="inline-block px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded">
+                          {selectedNode.data.info.skillInfo.difficulty}
+                        </span>
+                      </div>
+
+                      <div>
+                        <h4 className="font-semibold text-gray-900 mb-2">
+                          예상 소요 시간
+                        </h4>
+                        <p className="text-sm text-gray-700">
+                          {selectedNode.data.info.skillInfo.estimatedTime}
+                        </p>
+                      </div>
+
+                      {selectedNode.data.info.skillInfo.prerequisites.length >
+                        0 && (
+                        <div>
+                          <h4 className="font-semibold text-gray-900 mb-2">
+                            선수 조건
+                          </h4>
+                          <ul className="space-y-1">
+                            {selectedNode.data.info.skillInfo.prerequisites.map(
+                              (prereq, index) => (
+                                <li
+                                  key={index}
+                                  className="flex items-center text-sm text-gray-700"
+                                >
+                                  <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-2"></span>
+                                  {prereq}
+                                </li>
+                              ),
+                            )}
+                          </ul>
+                        </div>
+                      )}
+
+                      {selectedNode.data.info.skillInfo.learningResources
+                        .length > 0 && (
+                        <div>
+                          <h4 className="font-semibold text-gray-900 mb-2">
+                            학습 자료
+                          </h4>
+                          <div className="space-y-3">
+                            {selectedNode.data.info.skillInfo.learningResources.map(
+                              (resource, index) => (
+                                <div
+                                  key={index}
+                                  className="border-l-2 border-blue-200 pl-3"
+                                >
+                                  <p className="font-medium text-sm">
+                                    <span className="text-blue-600">
+                                      [
+                                      {resource.type === "book"
+                                        ? "도서"
+                                        : resource.type === "course"
+                                          ? "강의"
+                                          : resource.type}
+                                      ]
+                                    </span>{" "}
+                                    {resource.title}
+                                  </p>
+                                  <p className="text-xs text-gray-600 mt-1">
+                                    {resource.description}
+                                  </p>
+                                </div>
+                              ),
+                            )}
                           </div>
-                        ),
+                        </div>
                       )}
                     </div>
                   </div>
-                </div>
+                )}
+
+                {/* Certification Info */}
+                {selectedNode.data.info.certification && (
+                  <div>
+                    <h3 className="text-xl font-bold mb-4">자격증 정보</h3>
+
+                    <h4 className="text-lg font-semibold mb-3">
+                      {selectedNode.data.info.certification.name}
+                    </h4>
+
+                    <ul className="space-y-3 text-sm mb-6">
+                      <li className="flex">
+                        <span className="w-2 h-2 bg-black rounded-full mt-2 mr-3 flex-shrink-0"></span>
+                        <span>
+                          <strong>난이도:</strong>{" "}
+                          {selectedNode.data.info.certification.difficulty}
+                        </span>
+                      </li>
+                      <li className="flex">
+                        <span className="w-2 h-2 bg-black rounded-full mt-2 mr-3 flex-shrink-0"></span>
+                        <span>
+                          <strong>응시 자격:</strong>{" "}
+                          {selectedNode.data.info.certification.eligibility}
+                        </span>
+                      </li>
+                      <li className="flex">
+                        <span className="w-2 h-2 bg-black rounded-full mt-2 mr-3 flex-shrink-0"></span>
+                        <span>
+                          <strong>시험 구성:</strong>{" "}
+                          {selectedNode.data.info.certification.examStructure}
+                        </span>
+                      </li>
+                      <li className="flex">
+                        <span className="w-2 h-2 bg-black rounded-full mt-2 mr-3 flex-shrink-0"></span>
+                        <span>
+                          <strong>시험 일정:</strong>{" "}
+                          {selectedNode.data.info.certification.schedule}
+                        </span>
+                      </li>
+                    </ul>
+
+                    {/* Recommended Books */}
+                    <div className="mb-6">
+                      <h4 className="font-semibold mb-3">추천 교재</h4>
+                      <div className="space-y-3">
+                        {selectedNode.data.info.certification.recommendedBooks.map(
+                          (book, index) => (
+                            <div key={index}>
+                              <p className="font-medium text-sm">
+                                ({book.category === "written" ? "필기" : "실기"}
+                                )
+                                <span className="underline ml-1">
+                                  {book.title}
+                                </span>
+                              </p>
+                              <p className="text-xs text-gray-600 mt-1">
+                                → {book.description}
+                              </p>
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Recommended Courses */}
+                    <div>
+                      <h4 className="font-semibold mb-3">추천 온라인 강의</h4>
+                      <div className="space-y-3">
+                        {selectedNode.data.info.certification.recommendedCourses.map(
+                          (course, index) => (
+                            <div key={index}>
+                              <p className="font-medium underline text-sm">
+                                {course.title}
+                              </p>
+                              <p className="text-xs text-gray-600 mt-1">
+                                → {course.description}
+                              </p>
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </TabsContent>
 
               <TabsContent
                 value="reviews"
                 className="flex-1 p-6 overflow-auto space-y-4"
               >
-                {selectedMap.reviews.map((review) => (
+                {selectedNode.data.reviews.map((review) => (
                   <Card key={review.id} className="p-4">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center space-x-2">

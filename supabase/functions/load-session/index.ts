@@ -1,5 +1,6 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { corsHeaders } from "../_shared/cors.js"
+// @ts-expect-error Deno std library types not available in current TypeScript config
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
+import { getCorsHeaders } from "../_shared/cors.js"
 import { getSupabaseClient } from "../_shared/supabase.js"
 
 console.log("Load Session Function initialized!")
@@ -12,14 +13,14 @@ interface MindmapNode {
   y: number
   selected?: boolean
   parent_id?: string
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 interface Connection {
   from: string
   to: string
   type: 'hierarchical' | 'associative' | 'dependency' | 'similarity'
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 interface ViewportState {
@@ -53,7 +54,7 @@ interface SessionData {
     timestamp: string
   } | null
   enriched_nodes?: string[]
-  session_metadata?: Record<string, any>
+  session_metadata?: Record<string, unknown>
 }
 
 interface SessionResponse {
@@ -98,9 +99,9 @@ interface LoadSessionResponse {
     invalid_references: string[]
   }
   related_data?: {
-    current_plan?: any
-    enriched_content?: any[]
-    recent_expansions?: any[]
+    current_plan?: Record<string, unknown>
+    enriched_content?: Array<Record<string, unknown>>
+    recent_expansions?: Array<Record<string, unknown>>
   }
 }
 
@@ -173,9 +174,17 @@ function calculateSessionMetrics(session: SessionResponse): SessionMetrics {
 /**
  * Update session activity timestamp
  */
-async function updateSessionActivity(supabase: any, sessionId: string): Promise<void> {
+async function updateSessionActivity(supabase: unknown, sessionId: string): Promise<void> {
   try {
-    const { error } = await supabase
+    const supabaseClient = supabase as {
+      from: (table: string) => {
+        update: (data: Record<string, unknown>) => {
+          eq: (column: string, value: string) => Promise<{ error?: { message: string } }>;
+        };
+      };
+    }
+    
+    const { error } = await supabaseClient
       .from('user_sessions')
       .update({ 
         last_activity: new Date().toISOString()
@@ -193,17 +202,33 @@ async function updateSessionActivity(supabase: any, sessionId: string): Promise<
 /**
  * Fetch related data for session
  */
-async function fetchRelatedData(supabase: any, sessionData: SessionData): Promise<{
-  current_plan?: any
-  enriched_content?: any[]
-  recent_expansions?: any[]
+async function fetchRelatedData(supabase: unknown, sessionData: SessionData): Promise<{
+  current_plan?: Record<string, unknown>
+  enriched_content?: Array<Record<string, unknown>>
+  recent_expansions?: Array<Record<string, unknown>>
 }> {
-  const relatedData: any = {}
+  const relatedData: Record<string, unknown> = {}
+
+  const supabaseClient = supabase as {
+    from: (table: string) => {
+      select: (columns: string) => {
+        eq: (column: string, value: string) => {
+          single: () => Promise<{ data?: Record<string, unknown>; error?: { message: string } }>;
+          in: (column: string, values: string[]) => Promise<{ data?: Array<Record<string, unknown>>; error?: { message: string } }>;
+        };
+        in: (column: string, values: string[]) => {
+          order: (column: string, options?: { ascending: boolean }) => {
+            limit: (count: number) => Promise<{ data?: Array<Record<string, unknown>>; error?: { message: string } }>;
+          };
+        };
+      };
+    };
+  }
 
   try {
     // Fetch current plan if exists
     if (sessionData.current_plan_id) {
-      const { data: planData, error: planError } = await supabase
+      const { data: planData, error: planError } = await supabaseClient
         .from('plans')
         .select('id, title, description, objective, metadata')
         .eq('id', sessionData.current_plan_id)
@@ -216,17 +241,17 @@ async function fetchRelatedData(supabase: any, sessionData: SessionData): Promis
 
     // Fetch enriched content for nodes
     if (sessionData.enriched_nodes && sessionData.enriched_nodes.length > 0) {
-      const { data: enrichedData, error: enrichedError } = await supabase
+      const { data: enrichedData, error: enrichedError } = await supabaseClient
         .from('embeddings')
         .select('content_id, metadata')
         .eq('content_type', 'mindmap_node_enriched')
         .in('content_id', sessionData.enriched_nodes)
 
       if (!enrichedError && enrichedData) {
-        relatedData.enriched_content = enrichedData.map(item => ({
+        relatedData.enriched_content = enrichedData.map((item: Record<string, unknown>) => ({
           node_id: item.content_id,
-          enriched_content: item.metadata?.enriched_content,
-          cached_until: item.metadata?.cached_until
+          enriched_content: (item.metadata as Record<string, unknown>)?.enriched_content,
+          cached_until: (item.metadata as Record<string, unknown>)?.cached_until
         }))
       }
     }
@@ -234,12 +259,14 @@ async function fetchRelatedData(supabase: any, sessionData: SessionData): Promis
     // Fetch recent expansions for session nodes
     const nodeIds = sessionData.mindmap_nodes.map(node => node.id)
     if (nodeIds.length > 0) {
-      const { data: expansionsData, error: expansionsError } = await supabase
+      const expansionQuery = supabaseClient
         .from('node_expansions')
         .select('parent_node_id, expansion_context, generated_children, created_at')
         .in('parent_node_id', nodeIds)
         .order('created_at', { ascending: false })
         .limit(5)
+      
+      const { data: expansionsData, error: expansionsError } = await expansionQuery
 
       if (!expansionsError && expansionsData) {
         relatedData.recent_expansions = expansionsData
@@ -292,15 +319,18 @@ function migrateSessionData(sessionData: SessionData): SessionData {
   return migrated
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   const { method } = req
 
   // Handle CORS preflight requests
   if (method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    const origin = req.headers.get('Origin') || undefined
+    return new Response('ok', { headers: getCorsHeaders(origin) })
   }
 
   const supabase = getSupabaseClient()
+
+  const corsHeaders = getCorsHeaders(req.headers.get('Origin') || undefined)
 
   // 🔧 FIX: Shared helper function to eliminate code duplication
   async function processSessionRequest(
@@ -309,41 +339,73 @@ serve(async (req) => {
     validateNodes: boolean,
     includeRelated: boolean
   ): Promise<Response> {
+    const supabaseClient = supabase as {
+      from: (table: string) => {
+        select: (columns: string) => {
+          eq: (column: string, value: string) => {
+            single: () => Promise<{ data?: Record<string, unknown>; error?: { code?: string; message: string } }>;
+          };
+        };
+      };
+    }
+
     // Fetch session from database
-    const { data: sessionData, error: sessionError } = await supabase
+    const { data: sessionData, error: sessionError } = await supabaseClient
       .from('user_sessions')
       .select('*')
       .eq('session_id', sessionId.trim())
       .single()
 
-    if (sessionError) {
-      if (sessionError.code === 'PGRST116') { // No rows returned
-        return new Response(
-          JSON.stringify({ 
-            error: 'Session not found',
-            success: false 
-          }),
-          { 
-            status: 404,
-            headers: { ...corsHeaders, "Content-Type": "application/json" }
-          }
-        )
-      } else {
-        console.error('Database error fetching session:', sessionError)
-        return new Response(
-          JSON.stringify({ 
-            error: `Failed to load session: ${sessionError.message}`,
-            success: false 
-          }),
-          { 
-            status: 500,
-            headers: { ...corsHeaders, "Content-Type": "application/json" }
-          }
-        )
-      }
+    // Check for not found conditions
+    const isNotFound = sessionData === null || sessionData === undefined ||
+      (sessionError && (
+        sessionError.code === 'PGRST116' ||
+        (sessionError.message && sessionError.message.includes('No rows')) ||
+        (sessionError.message && sessionError.message.includes('not found'))
+      ))
+
+    if (isNotFound) {
+      console.error('Session not found:', { sessionId, error: sessionError })
+      return new Response(
+        JSON.stringify({ 
+          error: 'Session not found',
+          success: false 
+        }),
+        { 
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        }
+      )
     }
 
-    const session: SessionResponse = sessionData
+    if (sessionError) {
+      console.error('Database error fetching session:', sessionError)
+      return new Response(
+        JSON.stringify({ 
+          error: `Failed to load session: ${sessionError.message}`,
+          success: false 
+        }),
+        { 
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        }
+      )
+    }
+
+    if (!sessionData) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Session data not found',
+          success: false 
+        }),
+        { 
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        }
+      )
+    }
+
+    const session: SessionResponse = sessionData as unknown as SessionResponse
 
     // Migrate/repair session data if needed
     session.session_data = migrateSessionData(session.session_data)
@@ -380,7 +442,7 @@ serve(async (req) => {
     }
 
     // Check if session is expired and mark as warning
-    let statusCode = 200
+    const statusCode = 200
     let message = 'Session loaded successfully'
     
     if (metrics.is_expired) {
@@ -466,9 +528,10 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Function error:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Internal server error'
     return new Response(
       JSON.stringify({ 
-        error: error.message || 'Internal server error',
+        error: errorMessage,
         success: false 
       }),
       { 

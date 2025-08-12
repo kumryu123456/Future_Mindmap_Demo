@@ -1,42 +1,12 @@
+import { NodeData } from "@/nodes/type";
+
 export interface CareerMap {
   id: string;
   title: string;
   targetRole: string;
   createdAt: Date;
   updatedAt: Date;
-  info: {
-    certification: {
-      name: string;
-      difficulty: string;
-      eligibility: string;
-      examStructure: string;
-      schedule: string;
-      recommendedBooks: {
-        title: string;
-        description: string;
-        category: "written" | "practical";
-      }[];
-      recommendedCourses: {
-        title: string;
-        description: string;
-        platform: string;
-      }[];
-    };
-    roadmapSteps: {
-      id: string;
-      title: string;
-      type: "current" | "intermediate" | "final";
-      position: { x: number; y: number };
-    }[];
-  };
-  reviews: {
-    id: string;
-    author: string;
-    rating: number;
-    content: string;
-    createdAt: Date;
-    helpful: number;
-  }[];
+  nodes: NodeData[];
 }
 
 // Mock data for career maps
@@ -47,147 +17,149 @@ export const mockCareerMaps: CareerMap[] = [
     targetRole: "데이터 사이언티스트",
     createdAt: new Date("2024-01-15"),
     updatedAt: new Date("2024-01-20"),
-    info: {
-      certification: {
-        name: "빅데이터분석기사",
-        difficulty: "중급",
-        eligibility: "관련 학과 4년제 졸업(예정) 또는 동일 분야 실무 경력 4년 이상",
-        examStructure: "필기(객관식 100문항) / 실기(서술형 + 작업형)",
-        schedule: "연 3회 (한국산업인력공단)",
-        recommendedBooks: [
-          {
-            title: "2025 시나공 빅데이터분석기사 필기",
-            description: "기출문제 다수 수록, 초보자 친화",
-            category: "written"
-          },
-          {
-            title: "이기적 빅데이터분석기사 필기",
-            description: "핵심 이론 요약 + CBT 기출",
-            category: "written"
-          },
-          {
-            title: "빅데이터분석기사 실기 완벽대비",
-            description: "작업형 실습 예제 포함",
-            category: "practical"
-          },
-          {
-            title: "한 권으로 끝내는 빅데이터분석기사 실기",
-            description: "기출 분석 + 실습 파일 제공",
-            category: "practical"
-          }
-        ],
-        recommendedCourses: [
-          {
-            title: "인프런 – 빅데이터분석기사 필기/실기 완전정복",
-            description: "필기 이론부터 실기 작업형 실습까지 커버",
-            platform: "인프런"
-          },
-          {
-            title: "패스트캠퍼스 – 비전공자를 위한 빅데이터분석기사 단기합격",
-            description: "실무 예제 중심, 초보자 맞춤형",
-            platform: "패스트캠퍼스"
-          }
-        ]
-      },
-      roadmapSteps: [
-        { id: "current", title: "계란말이\n개발자", type: "current", position: { x: 300, y: 800 } },
-        { id: "pm-platform", title: "PM 플랫폼", type: "intermediate", position: { x: 100, y: 650 } },
-        { id: "growth-hack", title: "급속 성장", type: "intermediate", position: { x: 300, y: 650 } },
-        { id: "data-expertise", title: "당근 자격증", type: "intermediate", position: { x: 500, y: 650 } },
-        { id: "machine-learning", title: "머신러닝 분야\n핵심 인재", type: "intermediate", position: { x: 100, y: 500 } },
-        { id: "data-infra", title: "지우개 분야\n부트팀프", type: "intermediate", position: { x: 300, y: 500 } },
-        { id: "skill-growth", title: "실력 점검 평가", type: "intermediate", position: { x: 500, y: 500 } },
-        { id: "data-processing", title: "데이터 분석\n프로젝트", type: "intermediate", position: { x: 100, y: 350 } },
-        { id: "programming", title: "프로그래밍 자격증", type: "intermediate", position: { x: 300, y: 350 } },
-        { id: "web-dev", title: "사과 부트캠프", type: "intermediate", position: { x: 500, y: 350 } },
-        { id: "final", title: "데이터 분석가", type: "final", position: { x: 300, y: 200 } }
-      ]
-    },
-    reviews: [
+    nodes: [
       {
-        id: "review-1",
-        author: "김데이터",
-        rating: 5,
-        content: "정말 체계적으로 잘 정리된 로드맵입니다. 비전공자였는데 3개월만에 합격할 수 있었어요!",
-        createdAt: new Date("2024-01-18"),
-        helpful: 24
+        id: "current",
+        type: "current",
+        position: { x: 300, y: 600 },
+        data: {
+          label: "현재\n신입 개발자",
+        },
       },
       {
-        id: "review-2", 
-        author: "박분석가",
-        rating: 4,
-        content: "실기 부분이 특히 도움이 되었습니다. 작업형 문제 연습할 수 있는 자료가 많아서 좋았어요.",
-        createdAt: new Date("2024-01-19"),
-        helpful: 18
-      }
-    ]
+        id: "python-basic",
+        type: "intermediate",
+        position: { x: 150, y: 450 },
+        data: {
+          label: "Python\n기초 학습",
+          info: {
+            skillInfo: {
+              description:
+                "데이터 사이언스의 핵심 언어인 Python 기초 문법과 데이터 처리를 위한 라이브러리를 학습합니다.",
+              prerequisites: ["프로그래밍 기초"],
+              learningResources: [
+                {
+                  title: "점프 투 파이썬",
+                  description: "Python 기초부터 심화까지 체계적 학습",
+                  type: "book",
+                },
+                {
+                  title: "파이썬 데이터 사이언스 핸드북",
+                  description: "NumPy, Pandas, Matplotlib 완벽 가이드",
+                  type: "book",
+                },
+                {
+                  title: "모두를 위한 파이썬 (Python for Everybody)",
+                  description: "미시간 대학교의 Python 기초 강의",
+                  type: "course",
+                },
+              ],
+              estimatedTime: "2-3개월",
+              difficulty: "초급",
+            },
+          },
+          reviews: [
+            {
+              id: "review-python-1",
+              author: "김파이썬",
+              rating: 5,
+              content:
+                "Python 기초를 탄탄히 다질 수 있었어요. 특히 데이터 처리 부분이 도움되었습니다.",
+              createdAt: new Date("2024-01-19"),
+              helpful: 28,
+            },
+            {
+              id: "review-python-2",
+              author: "이초보",
+              rating: 4,
+              content:
+                "처음 배우기에 적절한 난이도였습니다. 실습 위주로 공부하니 재밌어요!",
+              createdAt: new Date("2024-01-20"),
+              helpful: 15,
+            },
+          ],
+        },
+      },
+      {
+        id: "final",
+
+        type: "final",
+        position: { x: 300, y: 50 },
+        data: {
+          label: "데이터 사이언티스트",
+        },
+      },
+    ],
   },
   {
     id: "info-processing-engineer-map",
-    title: "정보처리기사 커리어 맵", 
+    title: "정보처리기사 커리어 맵",
     targetRole: "백엔드 개발자",
     createdAt: new Date("2024-01-10"),
     updatedAt: new Date("2024-01-15"),
-    info: {
-      certification: {
-        name: "정보처리기사",
-        difficulty: "중급",
-        eligibility: "관련 학과 4년제 졸업(예정) 또는 동일 분야 실무 경력 4년 이상", 
-        examStructure: "필기(객관식 100문항) / 실기(서술형 + 작업형)",
-        schedule: "연 3회 (한국산업인력공단)",
-        recommendedBooks: [
-          {
-            title: "2025 시나공 정보처리기사 필기",
-            description: "기출문제 다수 수록, 초보자 친화",
-            category: "written"
-          },
-          {
-            title: "이기적 정보처리기사 필기", 
-            description: "핵심 이론 요약 + CBT 기출",
-            category: "written"
-          },
-          {
-            title: "정보처리기사 실기 완벽대비",
-            description: "작업형 실습 예제 포함",
-            category: "practical"
-          },
-          {
-            title: "한 권으로 끝내는 정보처리기사 실기",
-            description: "기출 분석 + 실습 파일 제공", 
-            category: "practical"
-          }
-        ],
-        recommendedCourses: [
-          {
-            title: "인프런 – 정보처리기사 필기/실기 완전정복",
-            description: "필기 이론부터 실기 작업형 실습까지 커버",
-            platform: "인프런"
-          },
-          {
-            title: "패스트캠퍼스 – 비전공자를 위한 정보처리기사 단기합격", 
-            description: "실무 예제 중심, 초보자 맞춤형",
-            platform: "패스트캠퍼스"
-          }
-        ]
-      },
-      roadmapSteps: [
-        { id: "current", title: "계란말이\n개발자", type: "current", position: { x: 300, y: 800 } },
-        { id: "backend-basic", title: "백엔드 기초", type: "intermediate", position: { x: 200, y: 650 } },
-        { id: "database", title: "데이터베이스", type: "intermediate", position: { x: 400, y: 650 } },
-        { id: "spring", title: "Spring 프레임워크", type: "intermediate", position: { x: 200, y: 500 } },
-        { id: "api", title: "REST API", type: "intermediate", position: { x: 400, y: 500 } },
-        { id: "final", title: "백엔드 개발자", type: "final", position: { x: 300, y: 350 } }
-      ]
-    },
-    reviews: [
+    nodes: [
       {
-        id: "review-3",
-        author: "이개발자", 
-        rating: 5,
-        content: "기사 자격증 취득 후 백엔드 개발자로 성공적으로 이직했습니다. 로드맵이 정말 도움되었어요!",
-        createdAt: new Date("2024-01-12"),
-        helpful: 31
-      }
-    ]
-  }
+        id: "current",
+        type: "current",
+        position: { x: 300, y: 500 },
+        data: {
+          label: "현재\n프론트엔드 개발자",
+        },
+      },
+      {
+        id: "java-basic",
+
+        type: "intermediate",
+        position: { x: 200, y: 400 },
+        data: {
+          label: "Java\n기초 학습",
+          info: {
+            skillInfo: {
+              description:
+                "백엔드 개발의 핵심 언어인 Java 기초 문법과 객체지향 프로그래밍을 학습합니다.",
+              prerequisites: ["프로그래밍 기초"],
+              learningResources: [
+                {
+                  title: "자바의 정석",
+                  description: "Java 학습의 바이블, 기초부터 심화까지",
+                  type: "book",
+                },
+                {
+                  title: "이것이 자바다",
+                  description: "실무 중심의 Java 학습서",
+                  type: "book",
+                },
+                {
+                  title: "자바 프로그래밍 입문",
+                  description: "생활코딩의 Java 기초 강의",
+                  type: "course",
+                },
+              ],
+              estimatedTime: "2-3개월",
+              difficulty: "초급",
+            },
+          },
+          reviews: [
+            {
+              id: "review-java-1",
+              author: "김자바",
+              rating: 5,
+              content:
+                "Java 기초를 탄탄히 다질 수 있었어요. 객체지향 개념이 특히 도움되었습니다.",
+              createdAt: new Date("2024-01-13"),
+              helpful: 25,
+            },
+          ],
+        },
+      },
+      {
+        id: "final",
+        type: "final",
+        position: { x: 300, y: 100 },
+        data: {
+          label: "asd",
+        },
+      },
+    ],
+  },
 ];

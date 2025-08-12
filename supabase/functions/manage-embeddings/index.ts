@@ -1,5 +1,6 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { corsHeaders } from "../_shared/cors.js"
+// @ts-expect-error: Deno module resolution
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
+import { getCorsHeaders } from "../_shared/cors.js"
 import { getSupabaseClient } from "../_shared/supabase.js"
 import { generateEmbeddingsForContent } from "../_shared/embeddings.js"
 
@@ -12,8 +13,10 @@ interface EmbeddingStats {
   oldest_embedding: string | null
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   const { method } = req
+  const origin = req.headers.get('Origin') || undefined
+  const corsHeaders = getCorsHeaders(origin)
 
   // Handle CORS preflight requests
   if (method === 'OPTIONS') {
@@ -57,10 +60,11 @@ serve(async (req) => {
               headers: { ...corsHeaders, "Content-Type": "application/json" }
             }
           )
-        } catch (error) {
+        } catch (error: unknown) {
+          const errorMessage = error instanceof Error ? error.message : String(error)
           return new Response(
             JSON.stringify({ 
-              error: `Failed to generate embeddings: ${error.message}`,
+              error: `Failed to generate embeddings: ${errorMessage}`,
               success: false 
             }),
             { 
@@ -106,12 +110,12 @@ serve(async (req) => {
 
         if (embeddings && embeddings.length > 0) {
           // Count by content type
-          embeddings.forEach(emb => {
+          embeddings.forEach((emb: { content_type: string; created_at: string }) => {
             stats.by_content_type[emb.content_type] = (stats.by_content_type[emb.content_type] || 0) + 1
           })
 
           // Find latest and oldest
-          const dates = embeddings.map(emb => emb.created_at).sort()
+          const dates = embeddings.map((emb: { content_type: string; created_at: string }) => emb.created_at).sort()
           stats.oldest_embedding = dates[0]
           stats.latest_embedding = dates[dates.length - 1]
         }
@@ -148,11 +152,12 @@ serve(async (req) => {
       }
     )
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Function error:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Internal server error'
     return new Response(
       JSON.stringify({ 
-        error: error.message || 'Internal server error',
+        error: errorMessage,
         success: false 
       }),
       { 

@@ -2,29 +2,55 @@
  * Embedding generation and vector similarity utilities
  */
 
+import type { DenoGlobal } from './types.ts'
+
+// Supabase client interface for embeddings operations
+interface SupabaseClientLike {
+  from: (table: string) => {
+    upsert: (data: Record<string, unknown>, options?: { onConflict?: string }) => {
+      select: () => Promise<{ data?: unknown[]; error?: { message: string } }>;
+    };
+    select: (columns: string) => {
+      eq: (column: string, value: string) => {
+        order: (column: string, options?: { ascending: boolean }) => {
+          limit: (count: number) => Promise<{ data?: unknown[]; error?: { message: string } }>;
+        };
+        limit: (count: number) => Promise<{ data?: unknown[]; error?: { message: string } }>;
+      };
+      gte: (column: string, value: number) => {
+        order: (column: string, options?: { ascending: boolean }) => {
+          limit: (count: number) => Promise<{ data?: unknown[]; error?: { message: string } }>;
+        };
+      };
+    };
+  };
+}
+
 /**
  * Sanitize error data to prevent PII leakage
  */
-function sanitizeErrorData(errorData: any): string {
+function sanitizeErrorData(errorData: unknown): string {
   if (!errorData || typeof errorData !== 'object') {
     return 'Unknown error'
   }
   
+  const errorObj = errorData as Record<string, unknown>
+  
   // Extract only safe, non-sensitive fields
-  const safeFields: Record<string, any> = {}
+  const safeFields: Record<string, unknown> = {}
   
   // Safe fields that typically don't contain user data
   const allowedFields = ['type', 'code', 'status', 'error_type', 'model']
   
   for (const field of allowedFields) {
-    if (errorData[field] !== undefined) {
-      safeFields[field] = errorData[field]
+    if (errorObj[field] !== undefined) {
+      safeFields[field] = errorObj[field]
     }
   }
   
   // Handle error messages - truncate if too long to prevent PII exposure
-  if (errorData.message && typeof errorData.message === 'string') {
-    const message = errorData.message
+  if (errorObj.message && typeof errorObj.message === 'string') {
+    const message = errorObj.message
     if (message.length > 200) {
       safeFields.message = message.substring(0, 200) + '... [truncated]'
     } else {
@@ -52,7 +78,7 @@ export interface SimilarContent {
   content_id: string
   content_text: string
   similarity_score: number
-  metadata: Record<string, any>
+  metadata: Record<string, unknown>
 }
 
 /**
@@ -71,9 +97,9 @@ async function retryWithExponentialBackoff<T>(
     } catch (error) {
       lastError = error as Error
       
-      // 🔧 FIX: Handle 429 errors with proper retry logic
-      if (error instanceof Error && (error as any).status === 429) {
-        const retryAfter = (error as any).retryAfter
+      // 🔧 FIX: Enhanced type-safe handling of 429 errors
+      if (error instanceof Error && 'status' in error && (error as Error & { status: number }).status === 429) {
+        const rateLimitError = error as Error & { status: number; retryAfter: number; isRetryable: boolean }
         
         if (attempt === maxRetries) {
           console.log(`Max retries (${maxRetries}) reached for rate limit. Giving up.`)
@@ -82,7 +108,8 @@ async function retryWithExponentialBackoff<T>(
         
         // Use server-specified retry time or exponential backoff, whichever is longer
         const exponentialDelay = baseDelayMs * Math.pow(2, attempt - 1)
-        const actualDelay = retryAfter ? Math.max(retryAfter, exponentialDelay) : exponentialDelay
+        const retryAfter = rateLimitError.retryAfter || 0
+        const actualDelay = Math.max(retryAfter, exponentialDelay)
         
         console.log(`Rate limited (429). Waiting ${actualDelay}ms before retry attempt ${attempt + 1}/${maxRetries}`)
         await new Promise(resolve => setTimeout(resolve, actualDelay))
@@ -91,7 +118,7 @@ async function retryWithExponentialBackoff<T>(
       
       // Don't retry on client errors (4xx) except rate limits (429)
       if (error instanceof Error && 'response' in error) {
-        const fetchError = error as any
+        const fetchError = error as Error & { response?: { status?: number } }
         const status = fetchError.response?.status
         if (status === 401 || status === 403) {
           throw error
@@ -116,12 +143,49 @@ async function retryWithExponentialBackoff<T>(
 }
 
 /**
- * 🔧 FIX: Token estimation for text input
+ * 🔧 FIX: Enhanced token estimation for multilingual text, especially Korean
  */
 function estimateTokenCount(text: string): number {
-  // Rough estimation: 1 token ≈ 4 characters for English
-  // More accurate for planning purposes
-  return Math.ceil(text.length / 4)
+  // Handle edge cases
+  if (!text || typeof text !== 'string') {
+    return 0
+  }
+  
+  const cleanText = text.trim()
+  if (cleanText.length === 0) {
+    return 0
+  }
+
+  // Try to use tiktoken library if available (would need to be imported)
+  // For now, use improved heuristic approach
+  
+  // Count words and characters
+  const words = cleanText.split(/\s+/).filter(word => word.length > 0).length
+  const chars = cleanText.length
+  
+  // Detect if text contains significant Korean content
+  const koreanChars = (cleanText.match(/[가-힣]/g) || []).length
+  const koreanRatio = koreanChars / chars
+  
+  // Enhanced estimation logic
+  let tokenEstimate: number
+  
+  if (koreanRatio > 0.3) {
+    // Korean-heavy text: Korean characters are typically 1-2 tokens each
+    // Use more conservative estimation for Korean
+    const koreanTokens = koreanChars * 1.5 // Korean chars are often 1.5 tokens on average
+    const otherChars = chars - koreanChars
+    const otherTokens = otherChars / 4 // English/numbers/punctuation
+    tokenEstimate = koreanTokens + otherTokens
+  } else {
+    // Mixed or English text: use word and character based heuristic
+    // This handles mixed content better than naive chars/4
+    const wordBasedEstimate = words * 0.75 // Average 0.75 tokens per word
+    const charBasedEstimate = chars / 4    // Fallback character estimation
+    tokenEstimate = Math.max(wordBasedEstimate, charBasedEstimate)
+  }
+  
+  return Math.ceil(tokenEstimate)
 }
 
 /**
@@ -131,9 +195,11 @@ export async function generateEmbedding(
   text: string,
   model: string = 'text-embedding-ada-002'
 ): Promise<EmbeddingResult> {
-  const openaiApiKey = Deno.env.get('OPENAI_API_KEY')
+  // 🔧 FIX: Improved environment variable access with fallbacks
+  const deno = (globalThis as { Deno?: DenoGlobal }).Deno
+  const openaiApiKey = deno?.env?.get('OPENAI_API_KEY')
   
-  if (!openaiApiKey) {
+  if (!openaiApiKey || openaiApiKey.trim().length === 0) {
     throw new Error('OpenAI API key not configured. Set OPENAI_API_KEY environment variable.')
   }
 
@@ -143,10 +209,31 @@ export async function generateEmbedding(
     throw new Error('Input text cannot be empty')
   }
 
-  // 🔧 FIX: Token limit check (ada-002 max: 8191 tokens)
+  // 🔧 FIX: Model-specific token limits with configuration support
+  const getTokenLimit = (modelName: string): number => {
+    const tokenLimits: Record<string, number> = {
+      'text-embedding-ada-002': 8191,
+      'text-embedding-3-small': 8191,
+      'text-embedding-3-large': 8191,
+    }
+    
+    // Check for custom token limit from environment
+    const customLimit = deno?.env?.get('OPENAI_TOKEN_LIMIT')
+    if (customLimit) {
+      const parsed = parseInt(customLimit, 10)
+      if (!isNaN(parsed) && parsed > 0) {
+        return Math.min(parsed, 8191) // Cap at API maximum
+      }
+    }
+    
+    return tokenLimits[modelName] || 8000 // Conservative default
+  }
+
+  const tokenLimit = getTokenLimit(model)
   const estimatedTokens = estimateTokenCount(cleanText)
-  if (estimatedTokens > 8000) {
-    throw new Error(`Input text too long (estimated ${estimatedTokens} tokens). Maximum is 8000 tokens.`)
+  
+  if (estimatedTokens > tokenLimit) {
+    throw new Error(`Input text too long (estimated ${estimatedTokens} tokens). Maximum for ${model} is ${tokenLimit} tokens.`)
   }
 
   const makeRequest = async (): Promise<EmbeddingResult> => {
@@ -165,7 +252,7 @@ export async function generateEmbedding(
     // 🔧 FIX: Enhanced error handling
     if (!response.ok) {
       const errorText = await response.text()
-      let errorData: any = {}
+      let errorData: Record<string, unknown> = {}
       
       try {
         errorData = JSON.parse(errorText)
@@ -173,15 +260,36 @@ export async function generateEmbedding(
         errorData = { message: errorText }
       }
 
-      // Rate limiting specific handling - create special error with retry info
+      // 🔧 FIX: Enhanced 429 error handling with improved type safety
       if (response.status === 429) {
-        const retryAfter = response.headers.get('Retry-After')
-        const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : 2000
-        const rateLimitError = new Error(`Rate limited. Retry after ${waitTime}ms. Status: ${response.status}`)
-        ;(rateLimitError as any).status = 429
-        ;(rateLimitError as any).retryAfter = waitTime
-        ;(rateLimitError as any).isRetryable = true
-        throw rateLimitError
+        const retryAfterHeader = response.headers.get('Retry-After')
+        let waitTime = 2000 // Default 2 seconds
+        
+        // Safely parse retry-after header
+        if (retryAfterHeader) {
+          const parsedRetryAfter = parseInt(retryAfterHeader, 10)
+          if (!isNaN(parsedRetryAfter) && parsedRetryAfter > 0) {
+            waitTime = parsedRetryAfter * 1000 // Convert to milliseconds
+          }
+        }
+        
+        // Create strongly-typed rate limit error
+        class RateLimitError extends Error {
+          public readonly status = 429
+          public readonly retryAfter: number
+          public readonly isRetryable = true
+          
+          constructor(waitTime: number) {
+            super(`Rate limited. Retry after ${waitTime}ms. Status: 429`)
+            this.name = 'RateLimitError'
+            this.retryAfter = waitTime
+            
+            // Maintain proper prototype chain
+            Object.setPrototypeOf(this, RateLimitError.prototype)
+          }
+        }
+        
+        throw new RateLimitError(waitTime)
       }
 
       // Invalid API key
@@ -226,14 +334,16 @@ export async function generateEmbedding(
  * Store embedding in database
  */
 export async function storeEmbedding(
-  supabase: any,
+  supabase: unknown,
   contentType: string,
   contentId: string,
   contentText: string,
   embedding: number[],
-  metadata: Record<string, any> = {}
-): Promise<any> {
-  const { data, error } = await supabase
+  metadata: Record<string, unknown> = {}
+): Promise<unknown> {
+  const supabaseClient = supabase as SupabaseClientLike
+  
+  const { data, error } = await supabaseClient
     .from('embeddings')
     .upsert({
       content_type: contentType,
@@ -257,7 +367,7 @@ export async function storeEmbedding(
  * Find similar content using vector similarity search
  */
 export async function findSimilarContent(
-  supabase: any,
+  supabase: unknown,
   queryEmbedding: number[],
   options: {
     contentTypes?: string[]
@@ -274,7 +384,11 @@ export async function findSimilarContent(
   } = options
 
   try {
-    const { data, error } = await supabase
+    const supabaseClient = supabase as {
+      rpc: (fn: string, params: Record<string, unknown>) => Promise<{ data?: unknown[]; error?: { message: string } }>;
+    }
+    
+    const { data, error } = await supabaseClient
       .rpc('find_similar_content', {
         query_embedding: `[${queryEmbedding.join(',')}]`,
         content_types: contentTypes,
@@ -287,19 +401,34 @@ export async function findSimilarContent(
     }
 
     // Filter out the content we're expanding from
-    let results = data || []
+    let results = (data as Record<string, unknown>[]) || []
     if (excludeContentId) {
-      results = results.filter((item: any) => item.content_id !== excludeContentId)
+      results = results.filter((item: Record<string, unknown>) => item.content_id !== excludeContentId)
     }
 
-    return results.map((item: any) => ({
-      id: item.id,
-      content_type: item.content_type,
-      content_id: item.content_id,
-      content_text: item.content_text,
-      similarity_score: parseFloat(item.similarity_score),
-      metadata: item.metadata || {}
-    }))
+    return results.map((item: Record<string, unknown>) => {
+      // 🔧 FIX: Defensive type checking for similarity_score
+      let similarityScore = 0; // Default fallback
+      if (typeof item.similarity_score === 'number') {
+        similarityScore = item.similarity_score;
+      } else if (typeof item.similarity_score === 'string') {
+        const parsedScore = Number(item.similarity_score);
+        if (!isNaN(parsedScore) && isFinite(parsedScore)) {
+          similarityScore = parsedScore;
+        }
+        // If string is empty or invalid, keep default 0
+      }
+      // For null, undefined, or other types, keep default 0
+      
+      return {
+        id: item.id as string,
+        content_type: item.content_type as string,
+        content_id: item.content_id as string,
+        content_text: item.content_text as string,
+        similarity_score: similarityScore,
+        metadata: (item.metadata as Record<string, unknown>) || {}
+      };
+    })
   } catch (error) {
     console.error('Error in findSimilarContent:', error)
     throw error
@@ -310,7 +439,7 @@ export async function findSimilarContent(
  * Generate embeddings for existing content
  */
 export async function generateEmbeddingsForContent(
-  supabase: any,
+  supabase: unknown,
   contentType: string,
   batchSize: number = 50
 ): Promise<{ processed: number; errors: number }> {
@@ -318,48 +447,51 @@ export async function generateEmbeddingsForContent(
   let errors = 0
 
   try {
+    const supabaseClient = supabase as {
+      from: (table: string) => {
+        select: (fields: string) => {
+          not: (field: string, operator: string, subquery: unknown) => {
+            limit: (count: number) => Promise<{ data?: unknown[]; error?: { message: string } }>;
+          };
+        };
+      };
+    }
+    
     // Get content without embeddings
     let query
-    let textField = ''
     
     switch (contentType) {
       case 'mindmap_node':
-        query = supabase
+        query = supabaseClient
           .from('mindmap_nodes')
           .select('id, title, content')
           .not('id', 'in', 
-            supabase
+            supabaseClient
               .from('embeddings')
               .select('content_id')
-              .eq('content_type', contentType)
           )
-        textField = 'title, content'
         break
         
       case 'user_input':
-        query = supabase
+        query = supabaseClient
           .from('user_inputs')
           .select('id, raw_text, keywords')
           .not('id', 'in',
-            supabase
+            supabaseClient
               .from('embeddings')
               .select('content_id')
-              .eq('content_type', contentType)
           )
-        textField = 'raw_text'
         break
         
       case 'enterprise_data':
-        query = supabase
+        query = supabaseClient
           .from('enterprise_data')
           .select('id, keyword_query, data')
           .not('id', 'in',
-            supabase
+            supabaseClient
               .from('embeddings')
               .select('content_id')
-              .eq('content_type', contentType)
           )
-        textField = 'keyword_query'
         break
         
       default:
@@ -376,22 +508,25 @@ export async function generateEmbeddingsForContent(
     for (const item of content || []) {
       try {
         let text = ''
-        let metadata: Record<string, any> = {}
+        let metadata: Record<string, unknown> = {}
+        
+        // Type cast item to a record
+        const typedItem = item as Record<string, unknown>
 
         switch (contentType) {
           case 'mindmap_node':
-            text = `${item.title}: ${item.content}`
-            metadata = { title: item.title }
+            text = `${typedItem.title as string}: ${typedItem.content as string}`
+            metadata = { title: typedItem.title }
             break
             
           case 'user_input':
-            text = item.raw_text
-            metadata = { keywords: item.keywords }
+            text = typedItem.raw_text as string
+            metadata = { keywords: typedItem.keywords }
             break
             
           case 'enterprise_data':
-            text = item.keyword_query
-            metadata = { has_data: (item.data || []).length > 0 }
+            text = typedItem.keyword_query as string
+            metadata = { has_data: ((typedItem.data as unknown[]) || []).length > 0 }
             break
         }
 
@@ -402,7 +537,7 @@ export async function generateEmbeddingsForContent(
         await storeEmbedding(
           supabase,
           contentType,
-          item.id,
+          typedItem.id as string,
           text,
           embeddingResult.embedding,
           metadata
@@ -414,14 +549,17 @@ export async function generateEmbeddingsForContent(
         await new Promise(resolve => setTimeout(resolve, 100))
         
       } catch (error) {
-        console.error(`Error processing ${contentType} ${item.id}:`, error.message)
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        const itemId = (item as Record<string, unknown>).id as string
+        console.error(`Error processing ${contentType} ${itemId}:`, errorMessage)
         errors++
       }
     }
 
     return { processed, errors }
   } catch (error) {
-    console.error(`Error in generateEmbeddingsForContent:`, error.message)
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    console.error(`Error in generateEmbeddingsForContent:`, errorMessage)
     throw error
   }
 }
@@ -466,8 +604,8 @@ export function normalizeVector(vector: number[]): number[] {
  * Batch process embeddings with rate limiting
  */
 export async function batchProcessEmbeddings(
-  items: any[],
-  processor: (item: any) => Promise<void>,
+  items: unknown[],
+  processor: (item: unknown) => Promise<void>,
   batchSize: number = 10,
   delayMs: number = 1000
 ): Promise<{ processed: number; errors: number }> {
@@ -482,7 +620,8 @@ export async function batchProcessEmbeddings(
         await processor(item)
         processed++
       } catch (error) {
-        console.error(`Error processing item:`, error.message)
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        console.error(`Error processing item:`, errorMessage)
         errors++
       }
     })
