@@ -1,576 +1,394 @@
-// @ts-expect-error Deno std library types not available in current TypeScript config
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts"
-import { getCorsHeaders } from "../_shared/cors.js"
-import { getSupabaseClient } from "../_shared/supabase.js"
-import { rateLimit, addRateLimitHeaders } from "../_shared/rate-limiter.js"
-import { createLogger } from "../_shared/logger.js"
-// Removed unused imports: metrics, withMetrics, measurePerformance
-import { DenoGlobal, SimpleOpenAIResponse } from "../_shared/types.js"
+// supabase/functions/generate-plan/index.ts
 
-const logger = createLogger('GeneratePlan')
-logger.info('Generate Plan Function initialized!')
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { OpenAI } from "https://esm.sh/openai@4.52.7";
+// import { corsHeaders } from "../_shared/cors.ts"; // [수정] 공유 파일 대신 직접 헤더를 정의합니다.
 
-interface PlanNode {
-  id: string
-  title: string
-  description: string
-  type: 'goal' | 'milestone' | 'task' | 'subtask' | 'resource'
-  priority: 'low' | 'medium' | 'high' | 'critical'
-  status: 'pending' | 'in_progress' | 'completed' | 'blocked'
-  timeline: {
-    estimated_duration: string
-    start_date?: string
-    end_date?: string
-    dependencies?: string[]
-  }
-  metadata: {
-    effort_level: number // 1-5 scale
-    complexity: number // 1-5 scale
-    risk_level: number // 1-5 scale
-    resources_required: string[]
-    skills_required: string[]
-    tags: string[]
-  }
-  children?: PlanNode[]
+// [수정] CORS 오류 해결을 위해 허용할 메서드(POST, OPTIONS)를 명시적으로 추가합니다.
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
+
+// --- 1. 타입 정의 (프론트엔드 요구사항 반영) ---
+
+interface RagContext {
+  career_profiles: { career_summary: string; skills: string[] }[];
+  path_info_items: { title_ko: string; category: string[]; topic_tags: string[]; retrieval_text: string }[];
 }
 
-interface GeneratedPlan {
-  id?: string
-  title: string
-  description: string
-  objective: string
-  context: {
-    keywords: string[]
-    enterprise_data_sources: string[]
-    user_input: string
-  }
-  plan_structure: PlanNode[]
-  metadata: {
-    total_estimated_duration: string
-    complexity_score: number
-    confidence_score: number
-    risk_assessment: string
-    success_metrics: string[]
-  }
-  generated_at: string
-  created_at?: string
-  updated_at?: string
+interface RequestPayload {
+  userInput: string;
+  targetRole: string;
+  currentRole: string;
+  context: RagContext;
 }
 
-/**
- * Build comprehensive prompt for OpenAI plan generation
- */
-function buildPlanGenerationPrompt(
-  userInput: string,
-  keywords: string[],
-  enterpriseData: Array<{ title: string; description: string; relevance_score: number; source?: string }>
-): string {
-  const enterpriseContext = enterpriseData
-    .slice(0, 10) // Limit to top 10 most relevant
-    .map(item => `- ${item.title}: ${item.description} (Relevance: ${item.relevance_score})`)
-    .join('\n')
+interface CareerMap {
+  id: string;
+  title: string;
+  targetRole:string;
+  createdAt: string;
+  updatedAt: string;
+  nodes: any[]; 
+}
 
-  return `You are an expert strategic planner and project management consultant. Generate a comprehensive, actionable plan based on the user's input and available enterprise context.
+// [추가] LearningResource, SkillInfo 등 상세 타입 정의
+interface LearningResource {
+  title: string;
+  description: string;
+  type: "book" | "course" | "article" | "video" | "project";
+}
 
-**User Input:**
-"${userInput}"
+interface SkillInfo {
+  description: string;
+  prerequisites: string[];
+  learningResources: LearningResource[];
+  estimatedTime: string;
+  difficulty: "초급" | "중급" | "고급";
+}
 
-**Extracted Keywords:**
-${keywords.join(', ')}
+interface GenerateCareerMapResponse {
+  success: boolean;
+  message: string;
+  plan_source: 'openai' | 'fallback';
+  data: CareerMap;
+}
 
-**Relevant Enterprise Context:**
-${enterpriseContext || 'No specific enterprise context available'}
 
-**Instructions:**
-1. Create a structured, hierarchical plan with clear goals, milestones, tasks, and subtasks
-2. Ensure the plan is actionable, realistic, and considers enterprise constraints
-3. Include timeline estimates, priority levels, and resource requirements
-4. Assess risks and complexity for each component
-5. Provide success metrics and confidence scores
+// --- 2. 헬퍼 함수 (수정) ---
 
-**Required JSON Structure:**
-{
-  "title": "Clear, descriptive plan title",
-  "description": "Brief overview of what this plan accomplishes",
-  "objective": "Primary goal or outcome this plan aims to achieve",
-  "context": {
-    "keywords": ["keyword1", "keyword2"],
-    "enterprise_data_sources": ["source1", "source2"],
-    "user_input": "original user input text"
-  },
-  "plan_structure": [
-    {
-      "id": "unique_identifier",
-      "title": "Main Goal/Phase Title",
-      "description": "Detailed description of this component",
-      "type": "goal|milestone|task|subtask|resource",
-      "priority": "low|medium|high|critical",
-      "status": "pending",
-      "timeline": {
-        "estimated_duration": "2 weeks",
-        "dependencies": ["dependency_id"]
-      },
-      "metadata": {
-        "effort_level": 3,
-        "complexity": 4,
-        "risk_level": 2,
-        "resources_required": ["developers", "designers"],
-        "skills_required": ["React", "API design"],
-        "tags": ["frontend", "critical_path"]
-      },
-      "children": [
-        {
-          "id": "subtask_id",
-          "title": "Subtask Title",
-          "description": "Subtask description",
-          "type": "task",
-          "priority": "medium",
-          "status": "pending",
-          "timeline": {
-            "estimated_duration": "3 days"
-          },
-          "metadata": {
-            "effort_level": 2,
-            "complexity": 2,
-            "risk_level": 1,
-            "resources_required": ["developer"],
-            "skills_required": ["JavaScript"],
-            "tags": ["implementation"]
-          }
-        }
-      ]
+function formatContextForPrompt(context: RagContext): string {
+    let contextString = "**참고 정보 (Context):**\n\n";
+
+    if (context.career_profiles?.length > 0) {
+        contextString += "--- 유사 경력 프로필 ---\n";
+        context.career_profiles.slice(0, 3).forEach(p => {
+            contextString += `- 요약: ${p.career_summary}\n- 주요 기술: ${p.skills.join(', ')}\n`;
+        });
     }
-  ],
-  "metadata": {
-    "total_estimated_duration": "8 weeks",
-    "complexity_score": 7,
-    "confidence_score": 8,
-    "risk_assessment": "Medium risk due to external dependencies",
-    "success_metrics": ["metric1", "metric2", "metric3"]
-  }
-}
 
-**Guidelines:**
-- Use realistic time estimates (hours, days, weeks, months)
-- Assign appropriate priority levels based on business impact
-- Include 3-7 main goals/phases with 2-5 tasks each
-- Effort level: 1=minimal, 5=intensive
-- Complexity: 1=simple, 5=highly complex
-- Risk level: 1=low risk, 5=high risk
-- Confidence score: 1-10 (10=very confident in plan success)
-- Complexity score: 1-10 overall project complexity
-
-Return only valid JSON without any markdown formatting or additional text.`
+    if (context.path_info_items?.length > 0) {
+        contextString += "\n--- 관련 활동 정보 (공모전, 인턴 등) ---\n";
+        context.path_info_items.slice(0, 5).forEach(item => {
+            contextString += `- 활동명: ${item.title_ko} (${item.category.join(', ')})\n- 관련 태그: ${item.topic_tags.join(', ')}\n- 내용: ${item.retrieval_text}\n`;
+        });
+    }
+    
+    return contextString.trim() ? contextString : "참고 정보 없음.";
 }
 
 /**
- * Call OpenAI API to generate plan
+ * [개선] OpenAI 프롬프트: 더 상세한 지침과 풍부한 예시로 응답 품질 향상
  */
-async function generatePlanWithOpenAI(prompt: string): Promise<unknown> {
-  const deno = (globalThis as { Deno?: DenoGlobal }).Deno
-  const openaiApiKey = deno?.env?.get('OPENAI_API_KEY')
-  
-  if (!openaiApiKey) {
-    throw new Error('OpenAI API key not configured. Please set OPENAI_API_KEY environment variable.')
-  }
+function buildPlanGenerationPrompt(payload: RequestPayload): string {
+    const { currentRole, targetRole, userInput, context } = payload;
+    const now = new Date().toISOString();
+    const formattedContext = formatContextForPrompt(context);
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${openaiApiKey}`,
-      'Content-Type': 'application/json',
+    return `You are an expert career development consultant for the Korean IT industry. Your task is to generate a detailed career roadmap in a specific JSON format.
+
+**User's Goal:**
+- **Current Role:** ${currentRole}
+- **Target Role:** ${targetRole}
+- **Additional Context:** "${userInput}"
+
+---
+${formattedContext}
+---
+
+**CRITICAL INSTRUCTIONS:**
+
+1.  **JSON ONLY:** Your entire output MUST be a single, valid JSON object. Do not include any text or markdown formatting outside of this JSON object.
+2.  **Strict Structure:** The JSON must strictly follow the \`CareerMap\` and \`NodeData\` structure from the example.
+3.  **Korean Content:** All user-facing strings (\`title\`, \`label\`, \`description\`, etc.) must be in Korean.
+4.  **Content Details & Node Structure:**
+    * Create at least one "current", one "final", and 2-4 "intermediate" nodes.
+    * Use the provided context to make the intermediate nodes realistic and helpful.
+    * **Each node MUST have a \`data\` object.**
+    * For 'intermediate' nodes, the \`data\` object **MUST contain an \`info\` object**, which in turn **MUST contain a \`skillInfo\` object.**
+    * The \`skillInfo\` object must be detailed, including a description, prerequisites, and at least 2-3 specific learning resources.
+    * The \`reviews\` array should contain 1-2 realistic user reviews with all fields populated.
+5.  **Dates:** Use this ISO string for all date fields: \`${now}\`.
+
+---
+
+**Example JSON Output (Your output MUST strictly follow this schema and level of detail):**
+\`\`\`json
+{
+  "id": "data-scientist-map-from-developer",
+  "title": "신입 개발자에서 데이터 사이언티스트로",
+  "targetRole": "데이터 사이언티스트",
+  "createdAt": "${now}",
+  "updatedAt": "${now}",
+  "nodes": [
+    {
+      "id": "current",
+      "type": "current",
+      "position": { "x": 300, "y": 600 },
+      "data": {
+        "label": "현재\\n신입 개발자"
+      }
     },
-    body: JSON.stringify({
-      model: 'gpt-4', // Use GPT-4 for better structured output
-      messages: [
-        {
-          role: 'system',
-          content: 'You are an expert strategic planner. Always respond with valid JSON only, no markdown or additional text.'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      temperature: 0.7,
-      max_tokens: 4000,
-      response_format: { type: 'json_object' }
-    })
-  })
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}))
-    throw new Error(`OpenAI API error: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`)
-  }
-
-  const data = await response.json() as SimpleOpenAIResponse
-  
-  if (!data.choices?.[0]?.message?.content) {
-    throw new Error('Invalid response structure from OpenAI API')
-  }
-
-  const content = data.choices[0].message.content
-  
-  try {
-    return JSON.parse(content)
-  } catch (error) {
-    console.error('Failed to parse OpenAI response as JSON:', content)
-    const errorMessage = error instanceof Error ? error.message : 'Unknown parsing error'
-    throw new Error(`Invalid JSON response from OpenAI: ${errorMessage}`)
-  }
-}
-
-/**
- * Validate generated plan structure
- */
-function validatePlanStructure(plan: unknown): { isValid: boolean; errors: string[] } {
-  const errors: string[] = []
-  
-  if (!plan || typeof plan !== 'object') {
-    errors.push('Plan must be an object')
-    return { isValid: false, errors }
-  }
-  
-  const planObj = plan as Record<string, unknown>
-
-  if (!planObj.title || typeof planObj.title !== 'string') {
-    errors.push('Plan must have a valid title')
-  }
-
-  if (!planObj.description || typeof planObj.description !== 'string') {
-    errors.push('Plan must have a valid description')
-  }
-
-  if (!planObj.objective || typeof planObj.objective !== 'string') {
-    errors.push('Plan must have a valid objective')
-  }
-
-  if (!Array.isArray(planObj.plan_structure)) {
-    errors.push('Plan must have a plan_structure array')
-  } else {
-    // Validate each node in the structure
-    (planObj.plan_structure as Array<Record<string, unknown>>).forEach((node: Record<string, unknown>, index: number) => {
-      if (!node.id || !node.title || !node.type) {
-        errors.push(`Plan node ${index + 1} missing required fields (id, title, type)`)
-      }
-      
-      if (!['goal', 'milestone', 'task', 'subtask', 'resource'].includes(node.type as string)) {
-        errors.push(`Plan node ${index + 1} has invalid type: ${node.type}`)
-      }
-
-      if (!['low', 'medium', 'high', 'critical'].includes(node.priority as string)) {
-        errors.push(`Plan node ${index + 1} has invalid priority: ${node.priority}`)
-      }
-    })
-  }
-
-  if (!planObj.metadata || typeof planObj.metadata !== 'object') {
-    errors.push('Plan must have valid metadata object')
-  }
-
-  return {
-    isValid: errors.length === 0,
-    errors
-  }
-}
-
-/**
- * Generate fallback plan if OpenAI fails
- */
-function generateFallbackPlan(userInput: string, keywords: string[]): GeneratedPlan {
-  return {
-    title: "Automated Plan Generation",
-    description: "A basic plan structure generated from your input keywords",
-    objective: "Accomplish the goals outlined in your input",
-    context: {
-      keywords,
-      enterprise_data_sources: [],
-      user_input: userInput
-    },
-    plan_structure: [
-      {
-        id: "research_phase",
-        title: "Research and Discovery",
-        description: "Gather requirements and understand the scope",
-        type: "goal",
-        priority: "high",
-        status: "pending",
-        timeline: {
-          estimated_duration: "1 week"
-        },
-        metadata: {
-          effort_level: 3,
-          complexity: 2,
-          risk_level: 1,
-          resources_required: ["analyst"],
-          skills_required: ["research"],
-          tags: ["discovery"]
-        },
-        children: [
-          {
-            id: "requirements_gathering",
-            title: "Requirements Gathering",
-            description: "Collect and document detailed requirements",
-            type: "task",
-            priority: "high",
-            status: "pending",
-            timeline: {
-              estimated_duration: "3 days"
-            },
-            metadata: {
-              effort_level: 2,
-              complexity: 2,
-              risk_level: 1,
-              resources_required: ["analyst"],
-              skills_required: ["documentation"],
-              tags: ["requirements"]
-            }
+    {
+      "id": "python-basics",
+      "type": "intermediate",
+      "position": { "x": 150, "y": 450 },
+      "data": {
+        "label": "Python\\n기초 및 라이브러리",
+        "info": {
+          "skillInfo": {
+            "description": "데이터 사이언스의 핵심 언어인 Python 기초 문법과 데이터 처리를 위한 NumPy, Pandas 라이브러리를 학습합니다.",
+            "prerequisites": ["프로그래밍 기초"],
+            "learningResources": [
+              { "title": "점프 투 파이썬", "description": "Python 기초부터 심화까지 체계적으로 다루는 베스트셀러 입문서입니다.", "type": "book" },
+              { "title": "파이썬 데이터 사이언스 핸드북", "description": "NumPy, Pandas, Matplotlib 등 데이터 과학 필수 라이브러리 활용법을 깊이 있게 다룹니다.", "type": "book" }
+            ],
+            "estimatedTime": "2-3개월",
+            "difficulty": "초급"
           }
+        },
+        "reviews": [
+          { "id": "review-python-1", "author": "김데이터", "rating": 5, "content": "비전공자인데 이 노드 덕분에 파이썬 기초를 탄탄히 다졌습니다. '파이썬 데이터 사이언스 핸드북'은 필독서입니다.", "createdAt": "${now}", "helpful": 32 }
         ]
-      },
-      {
-        id: "implementation_phase",
-        title: "Implementation",
-        description: "Execute the main work based on research findings",
-        type: "goal",
-        priority: "high",
-        status: "pending",
-        timeline: {
-          estimated_duration: "3 weeks",
-          dependencies: ["research_phase"]
-        },
-        metadata: {
-          effort_level: 4,
-          complexity: 3,
-          risk_level: 2,
-          resources_required: ["developer", "designer"],
-          skills_required: keywords.slice(0, 3),
-          tags: ["implementation", "core"]
-        }
       }
-    ],
-    metadata: {
-      total_estimated_duration: "4 weeks",
-      complexity_score: 5,
-      confidence_score: 6,
-      risk_assessment: "Medium risk - basic plan structure",
-      success_metrics: ["Requirements documented", "Implementation completed", "Testing passed"]
     },
-    generated_at: new Date().toISOString()
-  }
+    {
+      "id": "ml-fundamentals",
+      "type": "intermediate",
+      "position": { "x": 450, "y": 300 },
+      "data": {
+        "label": "머신러닝\\n기초",
+        "info": {
+          "skillInfo": {
+            "description": "Scikit-learn 라이브러리를 활용하여 회귀, 분류, 군집화 등 주요 머신러닝 알고리즘을 학습하고 모델을 평가합니다.",
+            "prerequisites": ["Python 기초", "기초 통계 지식"],
+            "learningResources": [
+              { "title": "핸즈온 머신러닝 (2판)", "description": "이론과 실습을 겸비한 최고의 머신러닝 교과서입니다.", "type": "book" },
+              { "title": "Andrew Ng의 Machine Learning", "description": "Coursera에서 제공되는 전설적인 머신러닝 입문 강의입니다.", "type": "course" }
+            ],
+            "estimatedTime": "3-4개월",
+            "difficulty": "중급"
+          }
+        },
+        "reviews": []
+      }
+    },
+    {
+      "id": "final-goal",
+      "type": "final",
+      "position": { "x": 300, "y": 50 },
+      "data": {
+        "label": "데이터 사이언티스트"
+      }
+    }
+  ]
+}
+\`\`\``;
 }
 
-serve(async (req: Request) => {
-  const { method } = req
-  const origin = req.headers.get('Origin') || undefined
-  const corsHeaders = getCorsHeaders(origin)
+// [추가] OpenAI API 호출 함수 분리
+async function generatePlanWithOpenAI(openai: OpenAI, prompt: string): Promise<any> {
+    console.log("[Info] 🤖 Calling OpenAI for career plan generation...");
+    const response = await openai.chat.completions.create({
+        model: 'gpt-4-turbo',
+        messages: [
+            { role: 'system', content: 'You are an expert career development strategist. Always respond with valid JSON only that strictly adheres to the user-provided schema. Prioritize Korean context.' },
+            { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 4000,
+        response_format: { type: 'json_object' }
+    });
 
-  // Handle CORS preflight requests
-  if (method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+    const content = response.choices?.[0]?.message?.content;
+    if (!content) {
+        throw new Error('OpenAI API returned an empty response.');
+    }
+    try {
+        const parsedJson = JSON.parse(content);
+        console.log("[Info] ✅ Successfully parsed OpenAI response.");
+        return parsedJson;
+    } catch (e) {
+        console.error('[Error] Failed to parse OpenAI response as JSON. Raw content:', content);
+        throw new Error(`Invalid JSON response from OpenAI: ${e.message}`);
+    }
+}
 
-  // 🔧 FIX: Apply rate limiting for AI endpoints
-  const rateLimitResult = rateLimit('ai')(req)
-  if (!rateLimitResult.allowed) {
-    return rateLimitResult.response!
-  }
+function validateCareerMap(plan: any): { isValid: boolean; errors: string[] } {
+    const errors: string[] = [];
+    if (!plan || typeof plan !== 'object') {
+        return { isValid: false, errors: ['Response is not a valid object.'] };
+    }
 
-  const supabase = getSupabaseClient()
+    // 최상위 필드 검사
+    if (typeof plan.id !== 'string') errors.push('Field "id" must be a string.');
+    if (typeof plan.title !== 'string') errors.push('Field "title" must be a string.');
+    if (typeof plan.targetRole !== 'string') errors.push('Field "targetRole" must be a string.');
+    if (plan.edges) errors.push('Field "edges" should not exist at the root level.');
 
-  try {
-    if (method === 'POST') {
-      const body = await req.json()
-      const { 
-        userInput, 
-        keywords = [], 
-        enterpriseData = [],
-        useOpenAI = true 
-      } = body
+    // Nodes 배열 및 내부 구조 검사
+    if (!Array.isArray(plan.nodes) || plan.nodes.length < 2) {
+        errors.push('Field "nodes" must be an array with at least 2 nodes.');
+    } else {
+        plan.nodes.forEach((node: any, i: number) => {
+            const nodeIdentifier = node.id ? `Node "${node.id}"` : `Node at index ${i}`;
 
-      // Validate input
-      if (!userInput || typeof userInput !== 'string' || userInput.trim().length === 0) {
-        return new Response(
-          JSON.stringify({ 
-            error: 'Missing or invalid userInput field. Please provide a non-empty string.',
-            success: false 
-          }),
-          { 
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" }
-          }
-        )
-      }
+            if (!node || typeof node !== 'object') {
+                errors.push(`Node at index ${i} is not a valid object.`);
+                return; // 이 노드는 더 이상 검사할 수 없으므로 다음 노드로 넘어감
+            }
+            if (typeof node.id !== 'string') errors.push(`${nodeIdentifier} is missing "id".`);
+            if (typeof node.type !== 'string') errors.push(`${nodeIdentifier} is missing "type".`);
+            if (!node.data || typeof node.data.label !== 'string') {
+                errors.push(`${nodeIdentifier} is missing or has an invalid "data.label".`);
+            }
+            
+            // 중간 노드의 상세 구조 검증 강화
+            if (node.type === 'intermediate') {
+                if (!node.data.info || typeof node.data.info !== 'object') {
+                    errors.push(`${nodeIdentifier} is missing the 'info' object.`);
+                } else {
+                    const skillInfo = node.data.info.skillInfo;
+                    if (!skillInfo || typeof skillInfo !== 'object') {
+                        errors.push(`${nodeIdentifier} is missing the nested 'skillInfo' object inside 'info'.`);
+                    } else {
+                        // skillInfo 내부 필드까지 상세 검증
+                        if (typeof skillInfo.description !== 'string') errors.push(`${nodeIdentifier} skillInfo is missing "description".`);
+                        if (!Array.isArray(skillInfo.prerequisites)) errors.push(`${nodeIdentifier} skillInfo "prerequisites" must be an array.`);
+                        if (typeof skillInfo.estimatedTime !== 'string') errors.push(`${nodeIdentifier} skillInfo is missing "estimatedTime".`);
+                        if (!["초급", "중급", "고급"].includes(skillInfo.difficulty)) errors.push(`${nodeIdentifier} skillInfo has invalid "difficulty".`);
+                        if (!Array.isArray(skillInfo.learningResources)) {
+                            errors.push(`${nodeIdentifier} skillInfo "learningResources" must be an array.`);
+                        }
+                    }
+                }
 
-      console.log('Generating plan for input:', userInput.substring(0, 100) + '...')
+                if (node.data.reviews && !Array.isArray(node.data.reviews)) {
+                    errors.push(`${nodeIdentifier} has an invalid 'reviews' field. It must be an array.`);
+                }
+            }
+        });
+    }
 
-      let generatedPlan: GeneratedPlan
-      let planSource = 'openai'
+    return { isValid: errors.length === 0, errors };
+}
 
-      if (useOpenAI) {
-        try {
-          // Generate comprehensive prompt
-          const prompt = buildPlanGenerationPrompt(userInput, keywords, enterpriseData)
-          
-          // Call OpenAI API
-          const openaiResponse = await generatePlanWithOpenAI(prompt)
-          
-          // Validate the response
-          const validation = validatePlanStructure(openaiResponse)
-          
-          if (!validation.isValid) {
-            console.error('OpenAI generated invalid plan structure:', validation.errors)
-            throw new Error('Generated plan failed validation')
-          }
-
-          // Prepare the complete plan object
-          const openAIResult = openaiResponse as Record<string, unknown>
-          generatedPlan = {
-            id: typeof openAIResult.id === 'string' ? openAIResult.id : undefined,
-            title: typeof openAIResult.title === 'string' ? openAIResult.title : 'Generated Plan',
-            description: typeof openAIResult.description === 'string' ? openAIResult.description : 'AI-generated plan based on your input',
-            objective: typeof openAIResult.objective === 'string' ? openAIResult.objective : 'Accomplish the goals outlined in your input',
-            plan_structure: Array.isArray(openAIResult.plan_structure) ? openAIResult.plan_structure as PlanNode[] : [],
-            metadata: typeof openAIResult.metadata === 'object' && openAIResult.metadata ? 
-              openAIResult.metadata as GeneratedPlan['metadata'] : {
-                total_estimated_duration: '4 weeks',
-                complexity_score: 5,
-                confidence_score: 7,
-                risk_assessment: 'Medium risk',
-                success_metrics: ['Plan completion', 'Goal achievement']
-              },
-            context: {
-              keywords,
-              enterprise_data_sources: enterpriseData
-                .map(item => item.source)
-                .filter((source): source is string => Boolean(source)),
-              user_input: userInput
+// [추가] Fallback 플랜 생성 함수
+function generateFallbackPlan(payload: RequestPayload): CareerMap {
+    console.log("[Info] 🔄 Generating fallback career plan...");
+    const now = new Date().toISOString();
+    const { currentRole, targetRole } = payload;
+    return {
+        id: `fallback-map-${Date.now()}`,
+        title: `기본 커리어 맵: ${targetRole} 되기`,
+        targetRole: targetRole,
+        createdAt: now,
+        updatedAt: now,
+        nodes: [
+            {
+                id: "current",
+                type: "current",
+                position: { x: 300, y: 500 },
+                data: { label: `현재\n${currentRole}` },
             },
-            generated_at: new Date().toISOString()
-          }
+            {
+                id: "intermediate-step-1",
+                type: "intermediate",
+                position: { x: 300, y: 350 },
+                data: {
+                    label: "1단계: 역량 분석 및 계획",
+                    info: {
+                        skillInfo: {
+                            description: "AI 응답에 문제가 발생하여 생성된 기본 계획입니다. 목표 달성을 위해 필요한 기술과 지식을 분석하고 구체적인 학습 계획을 세워보세요.",
+                            prerequisites: ["업무에 대한 열정"],
+                            learningResources: [],
+                            estimatedTime: "1-2주",
+                            difficulty: "초급",
+                        },
+                    },
+                },
+            },
+            {
+                id: "final",
+                type: "final",
+                position: { x: 300, y: 100 },
+                data: { label: targetRole },
+            },
+        ],
+    };
+}
+
+// [추가] JSON 응답 생성 래퍼
+function createJsonResponse(body: Record<string, any>, status = 200) {
+    return new Response(JSON.stringify(body), {
+        status,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+}
+
+// --- 3. 메인 서버 로직 (수정) ---
+
+serve(async (req) => {
+    if (req.method === "OPTIONS") {
+        return new Response("ok", { headers: corsHeaders });
+    }
+    if (req.method !== "POST") {
+        return createJsonResponse({ success: false, message: "Method Not Allowed" }, 405);
+    }
+
+    try {
+        const payload: RequestPayload = await req.json();
+        const { userInput, currentRole, targetRole, context } = payload;
+
+        if (!userInput || !currentRole || !targetRole || !context) {
+            return createJsonResponse({ success: false, message: 'Missing required fields: userInput, currentRole, targetRole, and context are required.' }, 400);
+        }
+
+        console.log(`[Info] 🚀 Request received: From '${currentRole}' to '${targetRole}'.`);
+
+        let finalPlan: CareerMap;
+        let planSource: 'openai' | 'fallback' = 'fallback'; // 기본값 설정
+
+        try {
+            const openai = new OpenAI({ apiKey: Deno.env.get("OPENAI_API_KEY")! });
+            const prompt = buildPlanGenerationPrompt(payload);
+            const openaiResponse = await generatePlanWithOpenAI(openai, prompt);
+            
+            const validation = validateCareerMap(openaiResponse);
+
+            if (!validation.isValid) {
+                console.error('[Error] OpenAI plan failed validation. Reasons:', validation.errors.join('; '));
+                console.error('[Error] Raw OpenAI Response:', JSON.stringify(openaiResponse, null, 2));
+                throw new Error('Generated plan is structurally invalid.');
+            }
+
+            finalPlan = openaiResponse as CareerMap;
+            planSource = 'openai';
+            console.log("[Info] ✅ Successfully validated and processed plan from OpenAI.");
 
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-          console.error('OpenAI plan generation failed:', errorMessage)
-          console.log('Falling back to automated plan generation')
-          
-          // Use fallback plan
-          generatedPlan = generateFallbackPlan(userInput, keywords)
-          planSource = 'fallback'
+            console.error(`[Error] Main logic failed, switching to fallback. Reason: ${error.message}`);
+            finalPlan = generateFallbackPlan(payload);
+            planSource = 'fallback';
         }
-      } else {
-        // Use fallback plan directly
-        generatedPlan = generateFallbackPlan(userInput, keywords)
-        planSource = 'fallback'
-      }
 
-      // Save plan to database
-      const { data: savedPlan, error: saveError } = await supabase
-        .from('plans')
-        .insert({
-          title: generatedPlan.title,
-          description: generatedPlan.description,
-          objective: generatedPlan.objective,
-          context: generatedPlan.context,
-          plan_structure: generatedPlan.plan_structure,
-          metadata: generatedPlan.metadata,
-          generated_at: generatedPlan.generated_at,
-          plan_source: planSource
-        })
-        .select()
-
-      if (saveError) {
-        console.error('Failed to save plan to database:', saveError)
-        // Return the plan anyway, but note the save failure
-        return new Response(
-          JSON.stringify({ 
-            data: generatedPlan,
-            plan_source: planSource,
+        const response: GenerateCareerMapResponse = {
             success: true,
-            warning: 'Plan generated successfully but failed to save to database',
-            message: 'Plan generated and ready for use'
-          }),
-          { 
-            status: 200,
-            headers: { ...corsHeaders, "Content-Type": "application/json" }
-          }
-        )
-      }
+            message: `Career plan generated using ${planSource}.`,
+            plan_source: planSource,
+            data: finalPlan,
+        };
 
-      const finalPlan = savedPlan[0]
+        return createJsonResponse(response, 200);
 
-      const response = new Response(
-        JSON.stringify({ 
-          data: finalPlan,
-          plan_source: planSource,
-          success: true,
-          message: 'Plan generated and saved successfully'
-        }),
-        { 
-          status: 201,
-          headers: { ...corsHeaders, "Content-Type": "application/json" }
-        }
-      )
-      
-      // 🔧 FIX: Add rate limit headers
-      return addRateLimitHeaders(response, rateLimitResult.info)
+    } catch (error) {
+        console.error("[Error] Top-level request handler failed:", error);
+        return createJsonResponse({
+            success: false,
+            message: error instanceof Error ? error.message : "An unknown internal error occurred.",
+        }, 500);
     }
-
-    // GET - Retrieve saved plans
-    if (method === 'GET') {
-      const url = new URL(req.url)
-      const limit = parseInt(url.searchParams.get('limit') || '10')
-      const planId = url.searchParams.get('id')
-
-      let query = supabase
-        .from('plans')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      if (planId) {
-        query = query.eq('id', planId).limit(1)
-      } else {
-        query = query.limit(limit)
-      }
-
-      const { data, error } = await query
-
-      if (error) {
-        throw new Error(`Failed to retrieve plans: ${error.message}`)
-      }
-
-      return new Response(
-        JSON.stringify({ 
-          data: planId ? (data[0] || null) : data,
-          count: data.length,
-          success: true 
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      )
-    }
-
-    return new Response(
-      JSON.stringify({ 
-        error: 'Method not allowed. Use POST to generate a plan or GET to retrieve plans.',
-        success: false 
-      }),
-      { 
-        status: 405,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      }
-    )
-
-  } catch (error) {
-    console.error('Function error:', error)
-    return new Response(
-      JSON.stringify({ 
-        error: error instanceof Error ? error.message : 'Internal server error',
-        success: false 
-      }),
-      { 
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      }
-    )
-  }
-})
+});

@@ -2,6 +2,17 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { getCorsHeaders } from "../_shared/cors.js"
 import { getSupabaseClient } from "../_shared/supabase.js"
+import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
+
+// Minimal Supabase client interface for type safety
+interface MinimalSupabaseClient {
+  from: (table: string) => {
+    select: (columns?: string) => any
+    update: (data: Record<string, unknown>) => any
+    upsert: (data: Record<string, unknown> | Record<string, unknown>[], options?: any) => any
+  }
+  rpc: (fn: string, params?: Record<string, unknown>) => Promise<{ data?: any; error?: { message: string } }>
+}
 
 console.log("Load Session Function initialized!")
 
@@ -174,17 +185,10 @@ function calculateSessionMetrics(session: SessionResponse): SessionMetrics {
 /**
  * Update session activity timestamp
  */
-async function updateSessionActivity(supabase: unknown, sessionId: string): Promise<void> {
+async function updateSessionActivity(supabase: MinimalSupabaseClient, sessionId: string): Promise<void> {
   try {
-    const supabaseClient = supabase as {
-      from: (table: string) => {
-        update: (data: Record<string, unknown>) => {
-          eq: (column: string, value: string) => Promise<{ error?: { message: string } }>;
-        };
-      };
-    }
     
-    const { error } = await supabaseClient
+    const { error } = await supabase
       .from('user_sessions')
       .update({ 
         last_activity: new Date().toISOString()
@@ -202,28 +206,12 @@ async function updateSessionActivity(supabase: unknown, sessionId: string): Prom
 /**
  * Fetch related data for session
  */
-async function fetchRelatedData(supabase: unknown, sessionData: SessionData): Promise<{
+async function fetchRelatedData(supabase: MinimalSupabaseClient, sessionData: SessionData): Promise<{
   current_plan?: Record<string, unknown>
   enriched_content?: Array<Record<string, unknown>>
   recent_expansions?: Array<Record<string, unknown>>
 }> {
   const relatedData: Record<string, unknown> = {}
-
-  const supabaseClient = supabase as {
-    from: (table: string) => {
-      select: (columns: string) => {
-        eq: (column: string, value: string) => {
-          single: () => Promise<{ data?: Record<string, unknown>; error?: { message: string } }>;
-          in: (column: string, values: string[]) => Promise<{ data?: Array<Record<string, unknown>>; error?: { message: string } }>;
-        };
-        in: (column: string, values: string[]) => {
-          order: (column: string, options?: { ascending: boolean }) => {
-            limit: (count: number) => Promise<{ data?: Array<Record<string, unknown>>; error?: { message: string } }>;
-          };
-        };
-      };
-    };
-  }
 
   try {
     // Fetch current plan if exists
@@ -241,7 +229,7 @@ async function fetchRelatedData(supabase: unknown, sessionData: SessionData): Pr
 
     // Fetch enriched content for nodes
     if (sessionData.enriched_nodes && sessionData.enriched_nodes.length > 0) {
-      const { data: enrichedData, error: enrichedError } = await supabaseClient
+      const { data: enrichedData, error: enrichedError } = await supabase
         .from('embeddings')
         .select('content_id, metadata')
         .eq('content_type', 'mindmap_node_enriched')
@@ -339,18 +327,9 @@ serve(async (req: Request) => {
     validateNodes: boolean,
     includeRelated: boolean
   ): Promise<Response> {
-    const supabaseClient = supabase as {
-      from: (table: string) => {
-        select: (columns: string) => {
-          eq: (column: string, value: string) => {
-            single: () => Promise<{ data?: Record<string, unknown>; error?: { code?: string; message: string } }>;
-          };
-        };
-      };
-    }
 
     // Fetch session from database
-    const { data: sessionData, error: sessionError } = await supabaseClient
+    const { data: sessionData, error: sessionError } = await supabase
       .from('user_sessions')
       .select('*')
       .eq('session_id', sessionId.trim())
@@ -405,7 +384,21 @@ serve(async (req: Request) => {
       )
     }
 
-    const session: SessionResponse = sessionData as unknown as SessionResponse
+    // Validate session data structure
+    if (!isSessionResponse(sessionData)) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Invalid session data structure',
+          success: false 
+        }),
+        { 
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        }
+      )
+    }
+    
+    const session: SessionResponse = sessionData
 
     // Migrate/repair session data if needed
     session.session_data = migrateSessionData(session.session_data)
@@ -464,7 +457,22 @@ serve(async (req: Request) => {
 
   try {
     if (method === 'POST') {
-      const body: LoadSessionRequest = await req.json()
+      let body: LoadSessionRequest
+      try {
+        body = await req.json()
+      } catch (jsonError) {
+        console.error('Invalid JSON payload:', jsonError)
+        return new Response(
+          JSON.stringify({ 
+            error: 'Invalid JSON payload',
+            success: false 
+          }),
+          { 
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" }
+          }
+        )
+      }
       const { 
         sessionId,
         updateActivity = true,

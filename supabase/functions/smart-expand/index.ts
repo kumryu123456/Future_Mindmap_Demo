@@ -45,6 +45,15 @@ interface SmartExpandRequest {
   useRAG?: boolean
 }
 
+/**
+ * Type for RAG context items
+ */
+interface RagContextItem {
+  content: string
+  similarity: number
+  type: string
+}
+
 interface SmartExpandResponse {
   suggestions: Array<{
     title: string
@@ -54,7 +63,7 @@ interface SmartExpandResponse {
     confidence: number
     ragSource?: string
   }>
-  ragContext?: unknown[]
+  ragContext?: RagContextItem[]
   expansionMetadata: {
     style: string
     ragUsed: boolean
@@ -80,7 +89,7 @@ async function performSmartExpansion(
     useRAG = true
   } = request
 
-  let ragContext: unknown[] = []
+  let ragContext: RagContextItem[] = []
   let similarContent: unknown[] = []
 
   // Step 1: RAG - Find similar content if enabled
@@ -99,13 +108,13 @@ async function performSmartExpansion(
         }
       )
       
-      ragContext = (similarContent as unknown[])
-        .filter(isRagItem)
-        .map(item => ({
-          content: item.content_text,
-          similarity: item.similarity_score,
-          type: item.content_type
-        }))
+      // Filter with type guard and map to RagContextItem
+      const validItems = similarContent.filter(isRagItem)
+      ragContext = validItems.map(item => ({
+        content: item.content_text,
+        similarity: item.similarity_score,
+        type: item.content_type
+      }))
       
       logger.info(`Found ${ragContext.length} similar items via RAG`)
     } catch (error) {
@@ -115,7 +124,7 @@ async function performSmartExpansion(
 
   // Step 2: Build enriched prompt with RAG context
   const ragContextText = ragContext.length > 0
-    ? `\n\n관련 정보 (RAG):\n${(ragContext as Array<{content: string; similarity: number}>).slice(0, 5).map(r => `- ${r.content} (유사도: ${r.similarity.toFixed(2)})`).join('\n')}`
+    ? `\n\n관련 정보 (RAG):\n${ragContext.slice(0, 5).map(r => `- ${r.content} (유사도: ${r.similarity.toFixed(2)})`).join('\n')}`
     : ''
 
   const styleInstructions = {
@@ -231,7 +240,7 @@ function generateFallbackSuggestions(
   nodeContent: string,
   style: string,
   maxChildren: number,
-  ragContext: unknown[]
+  ragContext: Array<{content: string; similarity: number; type: string}>
 ): SmartExpandResponse {
   const suggestions: Array<{
     title: string
@@ -244,7 +253,7 @@ function generateFallbackSuggestions(
   
   // Use RAG context if available
   if (ragContext.length > 0) {
-    (ragContext as Array<{content: string; similarity: number}>).slice(0, maxChildren).forEach((item, i) => {
+    ragContext.slice(0, maxChildren).forEach((item, i) => {
       suggestions.push({
         title: `${nodeTitle} - 연관 ${i + 1}`,
         content: item.content,

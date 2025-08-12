@@ -302,7 +302,7 @@ export class MockAIGenerator {
     const lowerKeyword = keyword.toLowerCase();
     
     // 🔧 FIX: Simplified type-safe access since map is always a defined object
-    const value = (map as Record<string, unknown>)[lowerKeyword];
+    const value = map[lowerKeyword];
     if (typeof value === 'string') {
       return value;
     }

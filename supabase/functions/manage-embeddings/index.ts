@@ -23,9 +23,8 @@ serve(async (req: Request) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
-  const supabase = getSupabaseClient()
-
   try {
+    const supabase = getSupabaseClient()
     if (method === 'POST') {
       const body = await req.json()
       const { action, contentType, batchSize = 50 } = body
@@ -92,32 +91,19 @@ serve(async (req: Request) => {
       const action = url.searchParams.get('action') || 'stats'
 
       if (action === 'stats') {
-        // Get embedding statistics
-        const { data: embeddings, error: embeddingsError } = await supabase
-          .from('embeddings')
-          .select('content_type, created_at')
+        // Use database aggregation for better performance
+        const { data: statsData, error: statsError } = await supabase
+          .rpc('embedding_stats')
 
-        if (embeddingsError) {
-          throw new Error(`Failed to fetch embeddings: ${embeddingsError.message}`)
+        if (statsError) {
+          throw new Error(`Failed to fetch embedding statistics: ${statsError.message}`)
         }
 
         const stats: EmbeddingStats = {
-          total_embeddings: embeddings?.length || 0,
-          by_content_type: {},
-          latest_embedding: null,
-          oldest_embedding: null
-        }
-
-        if (embeddings && embeddings.length > 0) {
-          // Count by content type
-          embeddings.forEach((emb: { content_type: string; created_at: string }) => {
-            stats.by_content_type[emb.content_type] = (stats.by_content_type[emb.content_type] || 0) + 1
-          })
-
-          // Find latest and oldest
-          const dates = embeddings.map((emb: { content_type: string; created_at: string }) => emb.created_at).sort()
-          stats.oldest_embedding = dates[0]
-          stats.latest_embedding = dates[dates.length - 1]
+          total_embeddings: statsData?.total_embeddings || 0,
+          by_content_type: statsData?.by_content_type || {},
+          latest_embedding: statsData?.latest_embedding || null,
+          oldest_embedding: statsData?.oldest_embedding || null
         }
 
         return new Response(
@@ -148,7 +134,7 @@ serve(async (req: Request) => {
       }),
       { 
         status: 405,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
+        headers: { ...corsHeaders, "Content-Type": "application/json", "Allow": "GET, POST" }
       }
     )
 

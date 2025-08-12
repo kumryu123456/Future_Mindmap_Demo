@@ -10,20 +10,49 @@ interface SupabaseClientLike {
     upsert: (data: Record<string, unknown>, options?: { onConflict?: string }) => {
       select: () => Promise<{ data?: unknown[]; error?: { message: string } }>;
     };
-    select: (columns: string) => {
-      eq: (column: string, value: string) => {
-        order: (column: string, options?: { ascending: boolean }) => {
+    select: (columns?: string) => {
+      eq: (column: string, value: string | number | boolean | null) => {
+        order: (column: string, options?: { ascending?: boolean }) => {
           limit: (count: number) => Promise<{ data?: unknown[]; error?: { message: string } }>;
         };
         limit: (count: number) => Promise<{ data?: unknown[]; error?: { message: string } }>;
       };
-      gte: (column: string, value: number) => {
-        order: (column: string, options?: { ascending: boolean }) => {
+      gte: (column: string, value: number | string | Date) => {
+        order: (column: string, options?: { ascending?: boolean }) => {
           limit: (count: number) => Promise<{ data?: unknown[]; error?: { message: string } }>;
         };
       };
     };
   };
+}
+
+// Runtime type guard for SupabaseClientLike
+function isSupabaseClientLike(value: unknown): value is SupabaseClientLike {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  
+  const obj = value as Record<string, unknown>;
+  
+  // Check for the 'from' method
+  if (typeof obj.from !== 'function') {
+    return false;
+  }
+  
+  // Basic structural check - we can't fully verify the deep structure at runtime
+  // but we can check that 'from' returns an object with expected methods
+  try {
+    const fromResult = obj.from('test');
+    if (!fromResult || typeof fromResult !== 'object') {
+      return false;
+    }
+    
+    const resultObj = fromResult as Record<string, unknown>;
+    return typeof resultObj.upsert === 'function' && typeof resultObj.select === 'function';
+  } catch {
+    // If calling from() throws, it's not a valid SupabaseClientLike
+    return false;
+  }
 }
 
 /**
@@ -193,7 +222,7 @@ function estimateTokenCount(text: string): number {
  */
 export async function generateEmbedding(
   text: string,
-  model: string = 'text-embedding-ada-002'
+  model: string = 'text-embedding-3-small'
 ): Promise<EmbeddingResult> {
   // 🔧 FIX: Improved environment variable access with fallbacks
   const deno = (globalThis as { Deno?: DenoGlobal }).Deno
@@ -341,7 +370,12 @@ export async function storeEmbedding(
   embedding: number[],
   metadata: Record<string, unknown> = {}
 ): Promise<unknown> {
-  const supabaseClient = supabase as SupabaseClientLike
+  // Validate supabase parameter with runtime type guard
+  if (!isSupabaseClientLike(supabase)) {
+    throw new Error('Invalid Supabase client provided to storeEmbedding. Expected a SupabaseClientLike object.');
+  }
+  
+  const supabaseClient = supabase
   
   const { data, error } = await supabaseClient
     .from('embeddings')

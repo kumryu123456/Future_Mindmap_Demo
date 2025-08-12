@@ -68,28 +68,44 @@ function validateNodeInput(node: Record<string, unknown>, isPartialUpdate: boole
 // Removed unused hasKoreanText function
 
 /**
+ * HTML entity escaping function
+ */
+function escapeHtml(text: string): string {
+  const entityMap: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }
+  return text.replace(/[&<>"']/g, (char) => entityMap[char] || char)
+}
+
+/**
  * Sanitize node input to prevent XSS and ensure data quality
  */
 function sanitizeNodeInput(node: Record<string, unknown>): Record<string, unknown> {
   const sanitized: Record<string, unknown> = {}
   
-  // Sanitize title with UTF-8 preservation
+  // Sanitize title with UTF-8 preservation and HTML entity encoding
   if (node.title !== undefined) {
     // Ensure proper UTF-8 string conversion and normalize Unicode
-    sanitized.title = String(node.title)
+    const cleanTitle = String(node.title)
       .normalize('NFC') // Normalize Unicode for consistent storage
       .trim()
-      .replace(/[<>\"'&]/g, '') // Remove potential XSS characters while preserving Korean/Unicode
       .slice(0, 500) // Enforce length limit
+    
+    sanitized.title = escapeHtml(cleanTitle)
   }
   
-  // Sanitize content with UTF-8 preservation  
+  // Sanitize content with UTF-8 preservation and HTML entity encoding
   if (node.content !== undefined) {
-    sanitized.content = String(node.content)
+    const cleanContent = String(node.content)
       .normalize('NFC') // Normalize Unicode for consistent storage
       .trim()
-      .replace(/[<>\"'&]/g, '') // Remove potential XSS characters but preserve Korean/Unicode
       .slice(0, 5000) // Enforce length limit
+    
+    sanitized.content = escapeHtml(cleanContent)
   }
   
   // Sanitize coordinates
