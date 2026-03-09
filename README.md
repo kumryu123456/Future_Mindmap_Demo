@@ -43,20 +43,20 @@
 
 ```
 [사용자 입력]
-    |
+     |
 [Frontend: React 19 + XYFlow + Zustand]
-    |
+     |
 [Supabase Edge Functions (Deno/TypeScript)]
-    ├── /parse-input       한국어 NLP 처리
-    ├── /generate-plan     OpenAI GPT 커리어 플랜 생성
-    ├── /auto-expand       벡터 유사도 기반 노드 자동 확장
-    ├── /rag-detail        RAG 상세 내용 보강
-    └── /manage-embeddings 임베딩 배치 처리
-    |
+ ├── /parse-input       한국어 NLP 처리
+ ├── /generate-plan     OpenAI GPT 커리어 플랜 생성
+ ├── /auto-expand       벡터 유사도 기반 노드 자동 확장
+ ├── /rag-detail        RAG 상세 내용 보강
+ └── /manage-embeddings 임베딩 배치 처리
+     |
 [PostgreSQL + pgvector]
-    ├── mindmap_nodes
-    ├── embeddings
-    └── user_sessions
+ ├── mindmap_nodes
+ ├── embeddings
+ └── user_sessions
 ```
 
 ---
@@ -70,6 +70,16 @@
 | Database | PostgreSQL, pgvector |
 | AI/ML | OpenAI GPT, OpenAI Embeddings (ada-002) |
 | Infra | Supabase Cloud, Vercel |
+
+---
+
+## 기술 선택 이유
+
+**Supabase Edge Functions** — 해커톤이라 인프라 세팅에 시간을 쓸 수 없었습니다. 별도 서버 없이 DB와 API를 함께 관리할 수 있는 Supabase를 선택했고, Edge Function으로 지연 없이 서버리스 API를 빠르게 구성할 수 있었습니다.
+
+**pgvector** — 벡터 DB를 별도로 띄우면 인프라 복잡도가 올라갑니다. 이미 사용 중인 PostgreSQL에 pgvector 확장을 추가하는 방식을 택해 관리 포인트를 줄였습니다. Pinecone 같은 전용 벡터 DB 대비 성능은 다소 낮지만 해커톤 규모에선 충분했습니다.
+
+**OpenAI ada-002** — 한국어 임베딩 품질 테스트를 여러 모델로 해봤을 때 ada-002가 한국어 IT 용어에서 가장 안정적인 유사도를 보였습니다. 비용 대비 성능이 좋아 선택했습니다.
 
 ---
 
@@ -94,8 +104,8 @@ npm install
 VITE_SUPABASE_URL=your_supabase_url
 VITE_SUPABASE_ANON_KEY=your_anon_key
 
-npm run dev:backend   # Terminal 1
-npm run dev:frontend  # Terminal 2
+npm run dev:backend  # Terminal 1
+npm run dev:frontend # Terminal 2
 ```
 
 ---
