@@ -1,6 +1,6 @@
-# Future Mindmap — RAG 기반 커리어 추천 시스템
+ | 팀 5명 | 기여도 35%# Future Mindmap — RAG 기반 커리어 추천 시스템
 
-2025.08 유니톤(Uni-D) 해커톤 참가작 | 백엔드 팀 리더
+2025.08 유니톤(Uni-D) 해커톤 참가작 | 백엔드 팀 리더 | 팀 5명 | 기여도 35%
 
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-336791?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org)
@@ -10,7 +10,7 @@
 
 ---
 
-## 프로젝트 소개
+## 프로젝트 소개 | 팀 5명 | 기여도 35%
 h
 사용자가 관심사와 역량을 입력하면 RAG(Retrieval Augmented Generation) 기반으로 맞춤형 커리어 로드맵을 마인드맵 형태로 시각화해주는 서비스입니다. 유니톤 해커톤에서 백엔드 팀장을 맡아 기획부터 배포까지 전 과정을 담당했습니다.
 
@@ -36,6 +36,7 @@ h
 - 한국어 형태소 분석, 감성 분석, UTF-8 인코딩 처리 모듈 개발
 - 마인드맵 상태 저장·복원 API 설계 (save-session / load-session)
 - 기획, 일정 관리, 코드 리뷰 총괄
+- 직무 데이터 300~400건 수집/정제 및 FAISS 벡터 DB 구축 주도
 
 ---
 
@@ -77,7 +78,7 @@ h
 
 **Supabase Edge Functions** — 해커톤이라 인프라 세팅에 시간을 쓸 수 없었습니다. 별도 서버 없이 DB와 API를 함께 관리할 수 있는 Supabase를 선택했고, Edge Function으로 지연 없이 서버리스 API를 빠르게 구성할 수 있었습니다.
 
-**FAISS** — 벡터 DB를 별도로 띄우면 인프라 복잡도가 올라갑니다. FAISS 인메모리 벡터 검색으로 외부 서비스(Pinecone/Weaviate) 없이 p99 검색 50ms 이내를 달성했습니다. 해커톤 환경에서 빠른 시맨틱 검색 구현에 최적이었습니다.니다.
+**FAISS** — 벡터 DB를 별도로 띄우면 인프라 복잡도가 올라갑니다. FAISS 인메모리 벡터 검색으로 외부 서비스(Pinecone/Weaviate) 없이 p99 검색 50ms 이내를 달성했습니다. 해커톤 환경에서 빠른 시맨틱 검색 구현에 최적이었습니다.
 
 **OpenAI ada-002** — 한국어 임베딩 품질 테스트를 여러 모델로 해봤을 때 ada-002가 한국어 IT 용어에서 가장 안정적인 유사도를 보였습니다. 비용 대비 성능이 좋아 선택했습니다.
 
